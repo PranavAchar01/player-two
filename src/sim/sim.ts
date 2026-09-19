@@ -92,7 +92,8 @@ export class Rig {
   private readonly compiled = new Map<string, MjModel>();
 
   /** Compiling the meshed model is expensive, so each task's model is built once and shared. */
-  modelFor(task: TaskSpec): MjModel {
+  modelFor(task: TaskSpec | null): MjModel {
+    if (!task) return this.model; // free mirror: the bare robot, no pendulum
     const key = `${task.side}-${task.slot}`;
     let m = this.compiled.get(key);
     if (!m) this.compiled.set(key, (m = this.mj.MjModel.from_xml_string(g1Xml(this.baseXml, this.slots[task.side][task.slot]))));
@@ -166,7 +167,7 @@ export class Sim {
   readonly model: MjModel;
   readonly data: MjData;
   private readonly mj: MainModule;
-  private readonly rest: Vec3;
+  private readonly rest: Vec3 | null;
   private readonly bobGeom: number;
   private readonly armBody = new Map<number, Side>();
   private readonly forearm = new Set<number>();
@@ -175,14 +176,15 @@ export class Sim {
   private firstTouch: Side | null = null;
   private succeeded = false;
 
-  constructor(rig: Rig, readonly task: TaskSpec) {
+  /** `task` null is free mirror mode: the robot copies the operator with nothing to strike. */
+  constructor(rig: Rig, readonly task: TaskSpec | null) {
     const mj = (this.mj = rig.mj);
-    this.rest = rig.slots[task.side][task.slot];
+    this.rest = task ? rig.slots[task.side][task.slot] : null;
     this.model = rig.modelFor(task);
     this.data = rig.freshData(this.model);
     const id = (type: { value: number }, name: string) => mj.mj_name2id(this.model, type.value, name);
-    this.bobGeom = id(mj.mjtObj.mjOBJ_GEOM, "bob_geom");
-    for (const b of ["pendulum", "bob"]) this.taskBodies.add(id(mj.mjtObj.mjOBJ_BODY, b));
+    this.bobGeom = task ? id(mj.mjtObj.mjOBJ_GEOM, "bob_geom") : -1;
+    if (task) for (const b of ["pendulum", "bob"]) this.taskBodies.add(id(mj.mjtObj.mjOBJ_BODY, b));
     for (let b = 1; b < this.model.nbody; b++) {
       const name = mj.mj_id2name(this.model, mj.mjtObj.mjOBJ_BODY.value, b);
       const m = /^(left|right)_(shoulder|elbow|wrist)/.exec(name);
@@ -238,7 +240,7 @@ export class Sim {
       contacts?.delete(); // the contact list itself is handed over as a copy too
     }
     const g = this.bobGeom * 3;
-    const bobSwing = Math.hypot(data.geom_xpos[g] - this.rest.x, data.geom_xpos[g + 1] - this.rest.y, data.geom_xpos[g + 2] - this.rest.z);
+    const bobSwing = this.rest ? Math.hypot(data.geom_xpos[g] - this.rest.x, data.geom_xpos[g + 1] - this.rest.y, data.geom_xpos[g + 2] - this.rest.z) : 0;
     if (bobSwing >= STRIKE_DISTANCE && this.firstTouch) this.succeeded = true;
     return { state: this.act.map((a) => data.qpos[a.qadr]), bobSwing, success: this.succeeded, torqueSaturated, selfCollision, firstTouch: this.firstTouch };
   }

@@ -17,7 +17,8 @@ const rig = new Rig(mj, await installG1(mj, async (f) => new Uint8Array(await re
 const ARMS = { left: ["11", "13", "15"], right: ["12", "14", "16"] };
 const WINDOW_S = 6;
 
-for (const file of (await readdir("data/tracks")).filter((f) => f.endsWith(".json"))) {
+const onlyPrefix = process.env.TRACKS ?? "";
+for (const file of (await readdir("data/tracks")).filter((f) => f.endsWith(".json") && f.startsWith(onlyPrefix))) {
   const id = file.replace(".json", "");
   const track = JSON.parse(await readFile(`data/tracks/${file}`, "utf8")) as { fps: number; width: number; height: number; frames: Frame[] };
   const at = (tick: number) => track.frames[Math.min(track.frames.length - 1, Math.round((tick / TICK_HZ) * track.fps))];
@@ -56,7 +57,7 @@ for (const file of (await readdir("data/tracks")).filter((f) => f.endsWith(".jso
       found = true;
       taken.add(start);
       await fetch(`${base}/api/episodes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(e) }).catch(() => null);
-      await writeFile(`data/demos/${id}-${side}-${slot}.json`, JSON.stringify({ source: `https://www.youtube.com/watch?v=${id}`, aspect: track.width / track.height, startSeconds: start / TICK_HZ, task, ctrl: e.ctrl, skeleton, gates: verdict.gates }));
+      await writeFile(`data/demos/${id}-${side}-${slot}.json`, JSON.stringify({ source: id.startsWith("mixkit-") ? `https://mixkit.co (clip ${id.slice(7)}, Mixkit free license)` : `https://www.youtube.com/watch?v=${id}`, video: id.startsWith("mixkit-") ? id : undefined, aspect: track.width / track.height, startSeconds: start / TICK_HZ, task, ctrl: e.ctrl, skeleton, gates: verdict.gates }));
       console.log(id, side, slot, `accepted: video ${(start / TICK_HZ).toFixed(1)}s to ${((start + e.ctrl.length) / TICK_HZ).toFixed(1)}s`);
     }
     if (!found) console.log(id, side, slot, "no stretch of this video passed every gate");

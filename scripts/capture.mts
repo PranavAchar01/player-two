@@ -23,7 +23,28 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
 const page = await browser.newPage();
 page.on("pageerror", (e) => console.log("pageerror", String(e).slice(0, 200)));
 
-async function clip(demo: string, mode: "robot" | "split", name: string) {
+/** Cuts the stretch of source footage an episode came from into mirrored, person-centred portrait frames. */
+async function footage(demo: string) {
+  const d = JSON.parse(await readFile(`data/demos/${demo}.json`, "utf8")) as { video: string; startSeconds: number; ctrl: number[][]; skeleton: (number[][] | null)[] };
+  const probe = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", `data/sources/${d.video}.mp4`]).toString().trim().split(",").map(Number);
+  const [W, H] = probe;
+  const pts = d.skeleton.flatMap((f) => f ?? []);
+  const xs = pts.map((p) => p[0] * W), ys = pts.map((p) => p[1] * H);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const h = Math.min(H, Math.max((Math.max(...ys) - Math.min(...ys)) * 2.1, ((Math.max(...xs) - Math.min(...xs)) * 1.15) / (730 / 1080)));
+  const w = Math.min(W, h * (730 / 1080));
+  const crop = { w: Math.round(w), h: Math.round(h), x: Math.round(Math.min(W - w, Math.max(0, cx - w / 2))), y: Math.round(Math.min(H - h, Math.max(0, cy - h * 0.42))) };
+  const t0 = Math.max(0, d.startSeconds - 30 / 50);
+  const dur = (30 + d.ctrl.length + 90) / 50 + 0.2;
+  const dir = `public/demos/${demo}-frames`;
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(t0), "-t", String(dur), "-i", `data/sources/${d.video}.mp4`, "-vf", `fps=25,crop=${crop.w}:${crop.h}:${crop.x}:${crop.y},hflip,scale=730:1080`, "-q:v", "3", `${dir}/%05d.jpg`]);
+  const count = (await import("node:fs")).readdirSync(dir).filter((f) => f.endsWith(".jpg")).length;
+  await writeFile(`${dir}/meta.json`, JSON.stringify({ count, t0, fps: 25, W, H, crop }));
+}
+
+async function clip(demo: string, mode: "robot" | "split" | "source", name: string) {
   const dir = `${out}/.frames-${name}`;
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
@@ -35,7 +56,7 @@ async function clip(demo: string, mode: "robot" | "split", name: string) {
     await page.evaluate(`window.p2.frame(${n})`);
     await page.screenshot({ path: `${dir}/${String(i++).padStart(5, "0")}.jpg`, type: "jpeg", quality: 93 });
   }
-  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "25", "-i", `${dir}/%05d.jpg`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", `${out}/${name}.mp4`]);
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "25", "-i", `${dir}/%05d.jpg`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", "-movflags", "+faststart", `${out}/${name}.mp4`]);
   await rm(dir, { recursive: true, force: true });
   console.log(name, "frames", i);
   return `${out}/${name}.mp4`;
@@ -45,11 +66,17 @@ await mkdir(out, { recursive: true });
 const robotClips: string[] = [];
 const splitClips: string[] = [];
 const only = process.env.ONLY;
-if (only !== "split") for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "pilot-left-high", "wZnsZsMywrY-right-low", "pilot-right-high"]) robotClips.push(await clip(demo, "robot", `robot-${demo}`));
-for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "wZnsZsMywrY-right-low"]) splitClips.push(await clip(demo, "split", `split-${demo}`));
+const sourceDemos = (process.env.SOURCE_DEMOS ?? "").split(",").filter(Boolean);
+const sourceClips: string[] = [];
+for (const demo of sourceDemos) {
+  await footage(demo);
+  sourceClips.push(await clip(demo, "source", `source-${demo}`));
+}
+if (!only) for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "pilot-left-high", "wZnsZsMywrY-right-low", "pilot-right-high"]) robotClips.push(await clip(demo, "robot", `robot-${demo}`));
+if (!only || only === "split") for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "wZnsZsMywrY-right-low"]) splitClips.push(await clip(demo, "split", `split-${demo}`));
 await browser.close();
 
-for (const [list, name] of [[robotClips, "demo"], [splitClips, "skeleton-vs-robot"]] as const) {
+for (const [list, name] of [[robotClips, "demo"], [splitClips, "skeleton-vs-robot"], [sourceClips, "video-to-robot"]] as const) {
   if (list.length === 0) continue;
   await writeFile(`${out}/${name}.txt`, list.map((f) => `file '${f.split("/").pop()}'`).join("\n"));
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", `${out}/${name}.txt`, "-c", "copy", "-movflags", "+faststart", `${out}/${name}.mp4`]);
