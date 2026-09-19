@@ -8,6 +8,9 @@ await mkdir("public/mujoco", { recursive: true });
 await mkdir("public/mediapipe", { recursive: true });
 for (const f of ["mujoco.js", "mujoco.wasm"]) await cp(`node_modules/@mujoco/mujoco/${f}`, `public/mujoco/${f}`);
 await cp("node_modules/@mediapipe/tasks-vision/wasm", "public/mediapipe/wasm", { recursive: true });
+await cp("vendor/unitree_g1/g1.xml", "public/g1/g1.xml");
+await cp("vendor/unitree_g1/assets", "public/g1/assets", { recursive: true });
+await cp("data/demos", "public/demos", { recursive: true }).catch(() => null);
 const model = "public/mediapipe/pose_landmarker_lite.task";
 if (!(await stat(model).catch(() => null))) {
   const res = await fetch(POSE_MODEL);

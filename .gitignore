@@ -44,3 +44,7 @@ next-env.d.ts
 .player-two/
 public/mujoco/
 public/mediapipe/
+public/g1/
+media/.frames-*
+media/
+public/demos/

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PoseLandmarker } from "@mediapipe/tasks-vision";
-import { loadMujocoBrowser } from "@/client/load";
+import { loadRig } from "@/client/load";
 import { Viewer } from "@/client/viewer";
 import { MAX_TICKS, pilotLandmarks, type EpisodeUpload, type Gate } from "@/sim/episode";
 import { OneEuro, Operator as Retargeter, type ArmLandmarks, type Landmark } from "@/sim/retarget";
@@ -50,10 +50,10 @@ export default function OperatorPage({ firstTask }: { firstTask: TaskSpec }) {
     let onHidden: (() => void) | undefined;
 
     void (async () => {
-      const mj = await loadMujocoBrowser();
+      const rig = await loadRig();
       if (cancelled || !simCanvas.current) return;
       viewer = new Viewer(simCanvas.current);
-      let retarget = new Retargeter();
+      let retarget = new Retargeter(rig);
       let filters = new Map<string, OneEuro>();
       let episode: EpisodeUpload | null = null;
       let pilotT = 0;
@@ -65,9 +65,9 @@ export default function OperatorPage({ firstTask }: { firstTask: TaskSpec }) {
 
       const reset = (t: TaskSpec) => {
         sim?.dispose();
-        sim = new Sim(mj, t);
+        sim = new Sim(rig, t);
         viewer!.setSim(sim);
-        retarget = new Retargeter();
+        retarget = new Retargeter(rig);
         filters = new Map();
         pilotT = 0;
         successAt = -1;

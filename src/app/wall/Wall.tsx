@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { loadMujocoBrowser } from "@/client/load";
+import { loadRig } from "@/client/load";
 import { Viewer } from "@/client/viewer";
 import type { Coverage, EpisodeSummary } from "@/lib/store";
 import { TICK_HZ, taskSentence, type TaskSpec } from "@/sim/scene";
@@ -45,7 +45,7 @@ export default function Wall() {
     let sim: Sim | undefined;
     let viewer: Viewer | undefined;
     void (async () => {
-      const mj = await loadMujocoBrowser();
+      const rig = await loadRig();
       if (cancelled || !canvas.current) return;
       viewer = new Viewer(canvas.current);
       let ctrl: number[][] = [];
@@ -62,7 +62,7 @@ export default function Wall() {
           void fetch(`/api/episodes/${loaded}`).then(async (r) => {
             const e = (await r.json()) as { ctrl: number[][]; task: TaskSpec; nickname: string };
             sim?.dispose();
-            sim = new Sim(mj, e.task);
+            sim = new Sim(rig, e.task);
             viewer!.setSim(sim);
             ctrl = e.ctrl;
             setReplaying({ nickname: e.nickname, task: e.task });
@@ -76,7 +76,7 @@ export default function Wall() {
             tick = 0;
             const t = sim.task;
             sim.dispose();
-            sim = new Sim(mj, t);
+            sim = new Sim(rig, t);
             viewer!.setSim(sim);
           }
         }

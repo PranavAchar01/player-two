@@ -1,7 +1,10 @@
-import type { MainModule } from "@mujoco/mujoco";
-import { ACTUATORS, EPISODE_SECONDS, FOREARM, SLOT_ANGLE, TICK_HZ, UPPER_ARM, type TaskSpec } from "./scene";
+import { ACTUATORS, EPISODE_SECONDS, SLOT_ANGLE, TICK_HZ, type TaskSpec } from "./scene";
 import { Operator, type ArmLandmarks, type Landmark } from "./retarget";
-import { Sim } from "./sim";
+import { Sim, type Rig } from "./sim";
+
+// only directions matter to the retarget, so the synthetic human can have any arm lengths
+const UPPER_ARM = 0.28;
+const FOREARM = 0.26;
 
 export const MAX_TICKS = Math.round(EPISODE_SECONDS * TICK_HZ);
 
@@ -52,8 +55,8 @@ export function validShape(e: EpisodeUpload): boolean {
  * The server never trusts the client's claim of success. It replays the uploaded joint targets
  * through the same deterministic simulation and measures everything again.
  */
-export function judge(mj: MainModule, e: EpisodeUpload): Verdict {
-  const sim = new Sim(mj, e.task);
+export function judge(rig: Rig, e: EpisodeUpload): Verdict {
+  const sim = new Sim(rig, e.task);
   const state: number[][] = [];
   let successTick: number | null = null;
   let torqueTicks = 0;
@@ -83,7 +86,7 @@ export function judge(mj: MainModule, e: EpisodeUpload): Verdict {
 
   const gates = [
     gate("length", "Episode length", n >= LIMITS.minTicks, `${(n / TICK_HZ).toFixed(1)}s`, `>= ${(LIMITS.minTicks / TICK_HZ).toFixed(1)}s`),
-    gate("success", "Task success (server replay)", successTick !== null, successTick === null ? "bob not struck" : `at ${(successTick / TICK_HZ).toFixed(1)}s`, "bob moved >= 0.12 m"),
+    gate("success", "Task success (server replay)", successTick !== null, successTick === null ? "bob not struck" : `at ${(successTick / TICK_HZ).toFixed(1)}s`, "bob moved >= 0.08 m"),
     gate("replay_match", "Client and replay agree", e.clientSuccess === (successTick !== null), e.clientSuccess ? "client: success" : "client: no success", "same outcome"),
     gate("hand", "Correct hand made first contact", firstTouch === e.task.side, firstTouch ?? "no contact", e.task.side),
     gate("confidence", "Ticks held for low tracking confidence", ratio(e.held) <= LIMITS.held, pct(ratio(e.held)), `<= ${pct(LIMITS.held)}`),
@@ -108,9 +111,9 @@ const lm = (x: number, y: number, z: number): Landmark => ({ x, y, z, visibility
  * test, so it exercises the same retarget path a webcam does.
  */
 export function pilotLandmarks(task: TaskSpec, seconds: number, speed = 1): ArmLandmarks {
-  const end = Math.min(2.2, SLOT_ANGLE[task.slot] + (32 * Math.PI) / 180);
-  const u = Math.min(1, Math.max(0, (seconds * speed) / 3));
-  const th = 0.08 + (end - 0.08) * u * u * (3 - 2 * u);
+  const end = Math.min(2.1, SLOT_ANGLE[task.slot] + (40 * Math.PI) / 180);
+  const u = Math.min(1, Math.max(0, (seconds * speed - 0.4) / 1.8));
+  const th = 0.45 + (end - 0.45) * u * u * (3 - 2 * u);
   const dir = { y: Math.sin(th), z: -Math.cos(th) };
   // robot frame (y out from this arm's shoulder, z up) to MediaPipe frame for the mirrored human arm
   const m = task.side === "left" ? 1 : -1;
@@ -119,9 +122,9 @@ export function pilotLandmarks(task: TaskSpec, seconds: number, speed = 1): ArmL
 }
 
 /** Runs the scripted pilot through the real retarget path and returns what a browser would upload. */
-export function flyPilot(mj: MainModule, task: TaskSpec, nickname = "pilot", speed = 1): EpisodeUpload {
-  const sim = new Sim(mj, task);
-  const op = new Operator();
+export function flyPilot(rig: Rig, task: TaskSpec, nickname = "pilot", speed = 1): EpisodeUpload {
+  const sim = new Sim(rig, task);
+  const op = new Operator(rig);
   const e: EpisodeUpload = { nickname, task, source: "pilot", ctrl: [], held: [], clamped: [], limited: [], dtMs: [], clientSuccess: false };
   for (let t = 0; t < MAX_TICKS; t++) {
     const arm = pilotLandmarks(task, t / TICK_HZ, speed);
