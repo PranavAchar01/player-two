@@ -142,7 +142,10 @@ try {
   for (const c of accepted) {
     try {
       const poseOnly = !c.licence.redistributable;
-      const r = await retargetClip(c, options.robot, options.seconds, id, poseOnly, c.verdict!.pinnedStartS);
+      // Always hand over the exact window the judge evaluated. "auto" lets each retargeter pick its own most active
+      // window, and the arm and humanoid retargeters do not pick the same one, so an unjudged stretch could slip in.
+      const judgedStart = c.verdict!.pinnedStartS ?? c.verdict!.metrics?.windowStartS ?? null;
+      const r = await retargetClip(c, options.robot, options.seconds, id, poseOnly, judgedStart);
       // Footage quality says how far the input can be trusted, retarget stats say how much of it the robot could follow.
       const followed = typeof r.stats.tracked === "number" ? (r.stats.tracked / 100) * (1 - (r.stats.limited ?? 0) / 100) : c.verdict!.score;
       const episode: Episode = {
