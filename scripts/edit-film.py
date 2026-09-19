@@ -59,6 +59,16 @@ for n, which in enumerate(order):
         segments.append((success + 0.6, stop, 1.25))
 
 
+# Hold the cut to TARGET seconds: a longer sentence takes longer to type, so the typing and run-timeline segments
+# (the ones already sped up past 1.5x) absorb the difference. The robot footage keeps its near-real-time speed.
+TARGET = 49.0
+fixed = sum((b - a) / sp for a, b, sp in segments if sp < 1.5)
+flexible = sum((b - a) / sp for a, b, sp in segments if sp >= 1.5)
+if fixed + flexible > TARGET:
+    squeeze = flexible / (TARGET - fixed)
+    segments = [(a, b, sp * squeeze if sp >= 1.5 else sp) for a, b, sp in segments]
+
+
 def remap(t: float) -> float | None:
     acc = 0.0
     for a, b, sp in segments:
