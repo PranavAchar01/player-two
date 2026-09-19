@@ -10,6 +10,11 @@ for (const f of ["mujoco.js", "mujoco.wasm"]) await cp(`node_modules/@mujoco/muj
 await cp("node_modules/@mediapipe/tasks-vision/wasm", "public/mediapipe/wasm", { recursive: true });
 await cp("vendor/unitree_g1/g1.xml", "public/g1/g1.xml");
 await cp("vendor/unitree_g1/assets", "public/g1/assets", { recursive: true });
+// the arms are served under their vendor directory name (ArmSpec.dir): model XML plus meshes
+for (const [dir, xml] of [["so101", "so101_new_calib.xml"], ["franka_emika_panda", "panda.xml"]]) {
+  await cp(`vendor/${dir}/${xml}`, `public/${dir}/${xml}`);
+  await cp(`vendor/${dir}/assets`, `public/${dir}/assets`, { recursive: true });
+}
 await cp("data/demos", "public/demos", { recursive: true }).catch(() => null);
 const model = "public/mediapipe/pose_landmarker_lite.task";
 if (!(await stat(model).catch(() => null))) {

@@ -45,6 +45,8 @@ next-env.d.ts
 public/mujoco/
 public/mediapipe/
 public/g1/
+public/so101/
+public/franka_emika_panda/
 media/.frames-*
 media/
 public/demos/

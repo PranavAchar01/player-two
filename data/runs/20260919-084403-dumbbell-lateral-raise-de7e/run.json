@@ -1,0 +1,935 @@
+{
+ "schema": 1,
+ "id": "20260919-084403-dumbbell-lateral-raise-de7e",
+ "task": "dumbbell lateral raise",
+ "options": {
+  "robot": "g1",
+  "maxVideos": 6,
+  "seconds": 6,
+  "sources": [
+   "pexels",
+   "youtube-cc"
+  ],
+  "allowStandardLicense": false
+ },
+ "status": "done",
+ "pid": 67994,
+ "startedAt": "2026-09-19T08:44:04.429Z",
+ "finishedAt": "2026-09-19T08:46:03.500Z",
+ "error": null,
+ "steps": [
+  {
+   "name": "plan",
+   "status": "done",
+   "startedAt": "2026-09-19T08:44:04.808Z",
+   "ms": 2647,
+   "summary": "gemini (gemini-flash-latest): 5 queries, both arm, arm_elevation 65 x1 sideways"
+  },
+  {
+   "name": "search",
+   "status": "done",
+   "startedAt": "2026-09-19T08:44:07.456Z",
+   "ms": 22354,
+   "summary": "9 candidates (pexels 0 usable, youtube-cc 9 usable). Fetching until 6 are judged, at most 9 attempts"
+  },
+  {
+   "name": "fetch",
+   "status": "done",
+   "startedAt": "2026-09-19T08:44:29.811Z",
+   "ms": 81405,
+   "summary": "6 of 8 attempted videos fetched and tracked, 2 failed"
+  },
+  {
+   "name": "judge",
+   "status": "done",
+   "startedAt": "2026-09-19T08:44:33.880Z",
+   "ms": 1243,
+   "summary": "3 accepted, 3 rejected"
+  },
+  {
+   "name": "retarget",
+   "status": "done",
+   "startedAt": "2026-09-19T08:45:52.461Z",
+   "ms": 11036,
+   "summary": "3 episodes written for the g1, 0 failed"
+  },
+  {
+   "name": "write",
+   "status": "done",
+   "startedAt": "2026-09-19T08:46:03.499Z",
+   "ms": 1,
+   "summary": "data/runs/20260919-084403-dumbbell-lateral-raise-de7e/run.json and data/runs/20260919-084403-dumbbell-lateral-raise-de7e/REPORT.md"
+  }
+ ],
+ "plan": {
+  "planner": "gemini",
+  "model": "gemini-flash-latest",
+  "note": null,
+  "queries": [
+   "dumbbell lateral raise front view demonstration",
+   "dumbbell side raise one person front view",
+   "dumbbell lateral raises full body straight angle",
+   "person doing dumbbell lateral raise facing camera",
+   "standing dumbbell side lateral raise exercise front"
+  ],
+  "arm": "both",
+  "motionDescription": "Both arms smoothly raise dumbbells laterally out to the sides until roughly horizontal and lower them back down to the hips.",
+  "signature": {
+   "kind": "arm_elevation",
+   "threshold": 65,
+   "minCount": 1,
+   "direction": "sideways"
+  },
+  "rejectionCriteria": [
+   "Dumbbells or hands cut off by the camera frame at top of the raise",
+   "Side angle or oblique camera perspective",
+   "Camera moving or panning with the exercise",
+   "Multiple people visible in the gym background",
+   "Rapid cuts or edited speed ramps",
+   "Excessive torso swinging or bending",
+   "Single-arm variation instead of bilateral raise"
+  ]
+ },
+ "searches": [
+  {
+   "source": "pexels",
+   "query": "dumbbell lateral raise front view demonstration",
+   "found": 0,
+   "kept": 0,
+   "note": "pexels.com answered with a bot check (HTTP 403). Not bypassed. Set PEXELS_API_KEY to use the official API instead."
+  },
+  {
+   "source": "youtube-cc",
+   "query": "dumbbell lateral raise front view demonstration",
+   "found": 10,
+   "kept": 9,
+   "note": null
+  }
+ ],
+ "candidates": [
+  {
+   "key": "youtube-cc-Y29xKcze8Ik",
+   "title": "How to Perform Dumbbell Lateral Raise   Form Tutorial",
+   "author": "Physique Development",
+   "authorUrl": "https://www.youtube.com/channel/UCwL6i80ui6Po2Jov2jVRlbQ",
+   "durationS": 219,
+   "stage": "failed",
+   "note": "YouTube refused the media download (HTTP 403). Clip dropped, no workaround attempted.",
+   "downloadUrl": null,
+   "file": null,
+   "track": null,
+   "footageDeleted": false,
+   "verdict": null,
+   "source": "youtube-cc",
+   "id": "Y29xKcze8Ik",
+   "pageUrl": "https://www.youtube.com/watch?v=Y29xKcze8Ik",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-pgrWjBfaFe8",
+   "title": "How to PROPERLY Dumbbell Lateral Raise For Bigger Shoulders (FIX THIS!)",
+   "author": "Colossus Fitness",
+   "authorUrl": "https://www.youtube.com/channel/UCqV2z4XYLcOLT27AmGT0M6w",
+   "durationS": 103,
+   "stage": "failed",
+   "note": "YouTube refused the media download (HTTP 403). Clip dropped, no workaround attempted.",
+   "downloadUrl": null,
+   "file": null,
+   "track": null,
+   "footageDeleted": false,
+   "verdict": null,
+   "source": "youtube-cc",
+   "id": "pgrWjBfaFe8",
+   "pageUrl": "https://www.youtube.com/watch?v=pgrWjBfaFe8",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-TM6se0vr1VA",
+   "title": "Dumbbell Lateral Raise: Gym Shorts (How To)",
+   "author": "Barbell Logic",
+   "authorUrl": "https://www.youtube.com/channel/UCgq2gIfNc3Iqb2PxZDAgeHw",
+   "durationS": 38,
+   "stage": "judged",
+   "note": null,
+   "downloadUrl": null,
+   "file": "data/sources/youtube-cc-TM6se0vr1VA.mp4",
+   "track": "data/tracks/youtube-cc-TM6se0vr1VA.json",
+   "footageDeleted": false,
+   "verdict": {
+    "pinnedStartS": null,
+    "windowNote": null,
+    "accepted": true,
+    "score": 0.984,
+    "reasons": [],
+    "checks": [
+     {
+      "name": "tracked frames (window)",
+      "pass": true,
+      "detail": "100% of frames tracked in the judged window, need 90%"
+     },
+     {
+      "name": "tracked frames (clip)",
+      "pass": true,
+      "detail": "73.6% of the whole clip tracked, need 50%"
+     },
+     {
+      "name": "arm visibility",
+      "pass": true,
+      "detail": "mean both arm landmark visibility 0.953, need 0.7"
+     },
+     {
+      "name": "person size",
+      "pass": true,
+      "detail": "person is about 138.2% of frame height, need 30%"
+     },
+     {
+      "name": "limbs in frame",
+      "pass": true,
+      "detail": "elbow and wrist inside the picture in 100% of frames, need 90%"
+     },
+     {
+      "name": "frontal view",
+      "pass": true,
+      "detail": "shoulders turned 2 deg from the camera plane, limit 35 deg"
+     },
+     {
+      "name": "facing camera",
+      "pass": true,
+      "detail": "facing the camera in 100% of frames, need 95%"
+     },
+     {
+      "name": "arm motion",
+      "pass": true,
+      "detail": "wrist moved over 74.4 cm, need 20 cm"
+     },
+     {
+      "name": "one continuous person",
+      "pass": true,
+      "detail": "0 sudden jumps in position or size (cut or second person), limit 0"
+     },
+     {
+      "name": "motion signature",
+      "pass": true,
+      "detail": "arm raised past 65 deg: seen 2 times (peak 120.2 deg), need 1"
+     },
+     {
+      "name": "motion direction",
+      "pass": true,
+      "detail": "raised arm points 99.5% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+     }
+    ],
+    "metrics": {
+     "frames": 906,
+     "fps": 23.976,
+     "durationS": 37.79,
+     "windowStartS": 12.51,
+     "windowS": 6.01,
+     "trackedPctClip": 73.6,
+     "trackedPctWindow": 100,
+     "armVisibility": 0.953,
+     "personHeightFrac": 1.382,
+     "limbsInFramePct": 100,
+     "frontalDeg": 2,
+     "facingCameraPct": 100,
+     "armExcursionM": 0.744,
+     "jumps": 0,
+     "signatureCount": 2,
+     "signaturePeak": 120.2,
+     "lateralFrac": 1,
+     "armUsed": "both"
+    }
+   },
+   "source": "youtube-cc",
+   "id": "TM6se0vr1VA",
+   "pageUrl": "https://www.youtube.com/watch?v=TM6se0vr1VA",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-v0y1ofwURX4",
+   "title": "Dumbbell Front Raise",
+   "author": "HL",
+   "authorUrl": "https://www.youtube.com/channel/UCcDF2jL0ORhwyTKs91b_n2w",
+   "durationS": 19,
+   "stage": "judged",
+   "note": null,
+   "downloadUrl": null,
+   "file": "data/sources/youtube-cc-v0y1ofwURX4.mp4",
+   "track": "data/tracks/youtube-cc-v0y1ofwURX4.json",
+   "footageDeleted": false,
+   "verdict": {
+    "pinnedStartS": null,
+    "windowNote": null,
+    "accepted": false,
+    "score": 0.987,
+    "reasons": [
+     "one continuous person: 1 sudden jump in position or size (cut or second person), limit 0",
+     "motion direction: raised arm points 13% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+    ],
+    "checks": [
+     {
+      "name": "tracked frames (window)",
+      "pass": true,
+      "detail": "100% of frames tracked in the judged window, need 90%"
+     },
+     {
+      "name": "tracked frames (clip)",
+      "pass": true,
+      "detail": "69% of the whole clip tracked, need 50%"
+     },
+     {
+      "name": "arm visibility",
+      "pass": true,
+      "detail": "mean both arm landmark visibility 0.986, need 0.7"
+     },
+     {
+      "name": "person size",
+      "pass": true,
+      "detail": "person is about 142.1% of frame height, need 30%"
+     },
+     {
+      "name": "limbs in frame",
+      "pass": true,
+      "detail": "elbow and wrist inside the picture in 100% of frames, need 90%"
+     },
+     {
+      "name": "frontal view",
+      "pass": true,
+      "detail": "shoulders turned 3.1 deg from the camera plane, limit 35 deg"
+     },
+     {
+      "name": "facing camera",
+      "pass": true,
+      "detail": "facing the camera in 100% of frames, need 95%"
+     },
+     {
+      "name": "arm motion",
+      "pass": true,
+      "detail": "wrist moved over 53.5 cm, need 20 cm"
+     },
+     {
+      "name": "one continuous person",
+      "pass": false,
+      "detail": "1 sudden jump in position or size (cut or second person), limit 0"
+     },
+     {
+      "name": "motion signature",
+      "pass": true,
+      "detail": "arm raised past 65 deg: seen 2 times (peak 94.5 deg), need 1"
+     },
+     {
+      "name": "motion direction",
+      "pass": false,
+      "detail": "raised arm points 13% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+     }
+    ],
+    "metrics": {
+     "frames": 571,
+     "fps": 29.97,
+     "durationS": 19.05,
+     "windowStartS": 7.54,
+     "windowS": 6.01,
+     "trackedPctClip": 69,
+     "trackedPctWindow": 100,
+     "armVisibility": 0.986,
+     "personHeightFrac": 1.421,
+     "limbsInFramePct": 100,
+     "frontalDeg": 3.1,
+     "facingCameraPct": 100,
+     "armExcursionM": 0.535,
+     "jumps": 1,
+     "signatureCount": 2,
+     "signaturePeak": 94.5,
+     "lateralFrac": 0.13,
+     "armUsed": "both"
+    }
+   },
+   "source": "youtube-cc",
+   "id": "v0y1ofwURX4",
+   "pageUrl": "https://www.youtube.com/watch?v=v0y1ofwURX4",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-bGcrurcvkpk",
+   "title": "Dumbbell Lateral Raise for Strong Shoulders",
+   "author": "Fitness Volt",
+   "authorUrl": "https://www.youtube.com/channel/UCWHcXX6Zd8Kti_Uujn0E4Nw",
+   "durationS": 48,
+   "stage": "judged",
+   "note": null,
+   "downloadUrl": null,
+   "file": "data/sources/youtube-cc-bGcrurcvkpk.mp4",
+   "track": "data/tracks/youtube-cc-bGcrurcvkpk.json",
+   "footageDeleted": false,
+   "verdict": {
+    "pinnedStartS": 21,
+    "windowNote": "most active window (36.18 s) failed: frontal view. Window at 21 s passes every check and is pinned instead.",
+    "accepted": true,
+    "score": 0.985,
+    "reasons": [],
+    "checks": [
+     {
+      "name": "tracked frames (window)",
+      "pass": true,
+      "detail": "100% of frames tracked in the judged window, need 90%"
+     },
+     {
+      "name": "tracked frames (clip)",
+      "pass": true,
+      "detail": "93.3% of the whole clip tracked, need 50%"
+     },
+     {
+      "name": "arm visibility",
+      "pass": true,
+      "detail": "mean both arm landmark visibility 0.986, need 0.7"
+     },
+     {
+      "name": "person size",
+      "pass": true,
+      "detail": "person is about 94.6% of frame height, need 30%"
+     },
+     {
+      "name": "limbs in frame",
+      "pass": true,
+      "detail": "elbow and wrist inside the picture in 100% of frames, need 90%"
+     },
+     {
+      "name": "frontal view",
+      "pass": true,
+      "detail": "shoulders turned 3.7 deg from the camera plane, limit 35 deg"
+     },
+     {
+      "name": "facing camera",
+      "pass": true,
+      "detail": "facing the camera in 100% of frames, need 95%"
+     },
+     {
+      "name": "arm motion",
+      "pass": true,
+      "detail": "wrist moved over 61 cm, need 20 cm"
+     },
+     {
+      "name": "one continuous person",
+      "pass": true,
+      "detail": "0 sudden jumps in position or size (cut or second person), limit 0"
+     },
+     {
+      "name": "motion signature",
+      "pass": true,
+      "detail": "arm raised past 65 deg: seen 3 times (peak 104.9 deg), need 1"
+     },
+     {
+      "name": "motion direction",
+      "pass": true,
+      "detail": "raised arm points 98.4% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+     }
+    ],
+    "metrics": {
+     "frames": 2881,
+     "fps": 60,
+     "durationS": 48.02,
+     "windowStartS": 21,
+     "windowS": 6,
+     "trackedPctClip": 93.3,
+     "trackedPctWindow": 100,
+     "armVisibility": 0.986,
+     "personHeightFrac": 0.946,
+     "limbsInFramePct": 100,
+     "frontalDeg": 3.7,
+     "facingCameraPct": 100,
+     "armExcursionM": 0.61,
+     "jumps": 0,
+     "signatureCount": 3,
+     "signaturePeak": 104.9,
+     "lateralFrac": 0.98,
+     "armUsed": "both"
+    }
+   },
+   "source": "youtube-cc",
+   "id": "bGcrurcvkpk",
+   "pageUrl": "https://www.youtube.com/watch?v=bGcrurcvkpk",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-v3YOWW1G0lU",
+   "title": "Standing 4 Point Lateral Raise",
+   "author": "Hybrid Fitness",
+   "authorUrl": "https://www.youtube.com/channel/UC5PPn-p0xLD4tp3ojIoX2Lw",
+   "durationS": 22,
+   "stage": "judged",
+   "note": null,
+   "downloadUrl": null,
+   "file": "data/sources/youtube-cc-v3YOWW1G0lU.mp4",
+   "track": "data/tracks/youtube-cc-v3YOWW1G0lU.json",
+   "footageDeleted": false,
+   "verdict": {
+    "pinnedStartS": null,
+    "windowNote": null,
+    "accepted": false,
+    "score": 0.878,
+    "reasons": [
+     "motion direction: raised arm points 56.5% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+    ],
+    "checks": [
+     {
+      "name": "tracked frames (window)",
+      "pass": true,
+      "detail": "100% of frames tracked in the judged window, need 90%"
+     },
+     {
+      "name": "tracked frames (clip)",
+      "pass": true,
+      "detail": "99.7% of the whole clip tracked, need 50%"
+     },
+     {
+      "name": "arm visibility",
+      "pass": true,
+      "detail": "mean both arm landmark visibility 0.893, need 0.7"
+     },
+     {
+      "name": "person size",
+      "pass": true,
+      "detail": "person is about 89.7% of frame height, need 30%"
+     },
+     {
+      "name": "limbs in frame",
+      "pass": true,
+      "detail": "elbow and wrist inside the picture in 100% of frames, need 90%"
+     },
+     {
+      "name": "frontal view",
+      "pass": true,
+      "detail": "shoulders turned 30.2 deg from the camera plane, limit 35 deg"
+     },
+     {
+      "name": "facing camera",
+      "pass": true,
+      "detail": "facing the camera in 100% of frames, need 95%"
+     },
+     {
+      "name": "arm motion",
+      "pass": true,
+      "detail": "wrist moved over 61.9 cm, need 20 cm"
+     },
+     {
+      "name": "one continuous person",
+      "pass": true,
+      "detail": "0 sudden jumps in position or size (cut or second person), limit 0"
+     },
+     {
+      "name": "motion signature",
+      "pass": true,
+      "detail": "arm raised past 65 deg: seen 1 time (peak 89.9 deg), need 1"
+     },
+     {
+      "name": "motion direction",
+      "pass": false,
+      "detail": "raised arm points 56.5% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+     }
+    ],
+    "metrics": {
+     "frames": 642,
+     "fps": 29.97,
+     "durationS": 21.42,
+     "windowStartS": 13.48,
+     "windowS": 6.01,
+     "trackedPctClip": 99.7,
+     "trackedPctWindow": 100,
+     "armVisibility": 0.893,
+     "personHeightFrac": 0.897,
+     "limbsInFramePct": 100,
+     "frontalDeg": 30.2,
+     "facingCameraPct": 100,
+     "armExcursionM": 0.619,
+     "jumps": 0,
+     "signatureCount": 1,
+     "signaturePeak": 89.9,
+     "lateralFrac": 0.57,
+     "armUsed": "both"
+    }
+   },
+   "source": "youtube-cc",
+   "id": "v3YOWW1G0lU",
+   "pageUrl": "https://www.youtube.com/watch?v=v3YOWW1G0lU",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-gtLbK3irtwA",
+   "title": "Dumbbell Front Raise for Strong Shoulders",
+   "author": "Fitness Volt",
+   "authorUrl": "https://www.youtube.com/channel/UCWHcXX6Zd8Kti_Uujn0E4Nw",
+   "durationS": 45,
+   "stage": "judged",
+   "note": null,
+   "downloadUrl": null,
+   "file": "data/sources/youtube-cc-gtLbK3irtwA.mp4",
+   "track": "data/tracks/youtube-cc-gtLbK3irtwA.json",
+   "footageDeleted": false,
+   "verdict": {
+    "pinnedStartS": null,
+    "windowNote": null,
+    "accepted": false,
+    "score": 0.824,
+    "reasons": [
+     "frontal view: shoulders turned 45.1 deg from the camera plane, limit 35 deg",
+     "motion direction: raised arm points 48.4% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+    ],
+    "checks": [
+     {
+      "name": "tracked frames (window)",
+      "pass": true,
+      "detail": "100% of frames tracked in the judged window, need 90%"
+     },
+     {
+      "name": "tracked frames (clip)",
+      "pass": true,
+      "detail": "90.4% of the whole clip tracked, need 50%"
+     },
+     {
+      "name": "arm visibility",
+      "pass": true,
+      "detail": "mean both arm landmark visibility 0.869, need 0.7"
+     },
+     {
+      "name": "person size",
+      "pass": true,
+      "detail": "person is about 84.9% of frame height, need 30%"
+     },
+     {
+      "name": "limbs in frame",
+      "pass": true,
+      "detail": "elbow and wrist inside the picture in 100% of frames, need 90%"
+     },
+     {
+      "name": "frontal view",
+      "pass": false,
+      "detail": "shoulders turned 45.1 deg from the camera plane, limit 35 deg"
+     },
+     {
+      "name": "facing camera",
+      "pass": true,
+      "detail": "facing the camera in 100% of frames, need 95%"
+     },
+     {
+      "name": "arm motion",
+      "pass": true,
+      "detail": "wrist moved over 51.6 cm, need 20 cm"
+     },
+     {
+      "name": "one continuous person",
+      "pass": true,
+      "detail": "0 sudden jumps in position or size (cut or second person), limit 0"
+     },
+     {
+      "name": "motion signature",
+      "pass": true,
+      "detail": "arm raised past 65 deg: seen 1 time (peak 72.7 deg), need 1"
+     },
+     {
+      "name": "motion direction",
+      "pass": false,
+      "detail": "raised arm points 48.4% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+     }
+    ],
+    "metrics": {
+     "frames": 2681,
+     "fps": 60,
+     "durationS": 44.68,
+     "windowStartS": 3,
+     "windowS": 6,
+     "trackedPctClip": 90.4,
+     "trackedPctWindow": 100,
+     "armVisibility": 0.869,
+     "personHeightFrac": 0.849,
+     "limbsInFramePct": 100,
+     "frontalDeg": 45.1,
+     "facingCameraPct": 100,
+     "armExcursionM": 0.516,
+     "jumps": 0,
+     "signatureCount": 1,
+     "signaturePeak": 72.7,
+     "lateralFrac": 0.48,
+     "armUsed": "both"
+    }
+   },
+   "source": "youtube-cc",
+   "id": "gtLbK3irtwA",
+   "pageUrl": "https://www.youtube.com/watch?v=gtLbK3irtwA",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-WWhSHS2DrKQ",
+   "title": "Dumbbell Lateral Raises",
+   "author": "Coach Bobby Bluford",
+   "authorUrl": "https://www.youtube.com/channel/UCiiaJ-JOVbQjGGO8URN0KLQ",
+   "durationS": 30,
+   "stage": "judged",
+   "note": null,
+   "downloadUrl": null,
+   "file": "data/sources/youtube-cc-WWhSHS2DrKQ.mp4",
+   "track": "data/tracks/youtube-cc-WWhSHS2DrKQ.json",
+   "footageDeleted": false,
+   "verdict": {
+    "pinnedStartS": null,
+    "windowNote": null,
+    "accepted": true,
+    "score": 0.981,
+    "reasons": [],
+    "checks": [
+     {
+      "name": "tracked frames (window)",
+      "pass": true,
+      "detail": "100% of frames tracked in the judged window, need 90%"
+     },
+     {
+      "name": "tracked frames (clip)",
+      "pass": true,
+      "detail": "100% of the whole clip tracked, need 50%"
+     },
+     {
+      "name": "arm visibility",
+      "pass": true,
+      "detail": "mean both arm landmark visibility 0.927, need 0.7"
+     },
+     {
+      "name": "person size",
+      "pass": true,
+      "detail": "person is about 177.6% of frame height, need 30%"
+     },
+     {
+      "name": "limbs in frame",
+      "pass": true,
+      "detail": "elbow and wrist inside the picture in 100% of frames, need 90%"
+     },
+     {
+      "name": "frontal view",
+      "pass": true,
+      "detail": "shoulders turned 1.2 deg from the camera plane, limit 35 deg"
+     },
+     {
+      "name": "facing camera",
+      "pass": true,
+      "detail": "facing the camera in 100% of frames, need 95%"
+     },
+     {
+      "name": "arm motion",
+      "pass": true,
+      "detail": "wrist moved over 61.5 cm, need 20 cm"
+     },
+     {
+      "name": "one continuous person",
+      "pass": true,
+      "detail": "0 sudden jumps in position or size (cut or second person), limit 0"
+     },
+     {
+      "name": "motion signature",
+      "pass": true,
+      "detail": "arm raised past 65 deg: seen 3 times (peak 100.9 deg), need 1"
+     },
+     {
+      "name": "motion direction",
+      "pass": true,
+      "detail": "raised arm points 94.9% sideways, need 70% or more for a raise out to the side (less looks like a front raise)"
+     }
+    ],
+    "metrics": {
+     "frames": 901,
+     "fps": 29.97,
+     "durationS": 30.06,
+     "windowStartS": 6.71,
+     "windowS": 6.01,
+     "trackedPctClip": 100,
+     "trackedPctWindow": 100,
+     "armVisibility": 0.927,
+     "personHeightFrac": 1.776,
+     "limbsInFramePct": 100,
+     "frontalDeg": 1.2,
+     "facingCameraPct": 100,
+     "armExcursionM": 0.615,
+     "jumps": 0,
+     "signatureCount": 3,
+     "signaturePeak": 100.9,
+     "lateralFrac": 0.95,
+     "armUsed": "both"
+    }
+   },
+   "source": "youtube-cc",
+   "id": "WWhSHS2DrKQ",
+   "pageUrl": "https://www.youtube.com/watch?v=WWhSHS2DrKQ",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  },
+  {
+   "key": "youtube-cc-3LbW_XoMEt4",
+   "title": "Dumbbell Lateral Raise",
+   "author": "HL",
+   "authorUrl": "https://www.youtube.com/channel/UCcDF2jL0ORhwyTKs91b_n2w",
+   "durationS": 19,
+   "stage": "skipped",
+   "note": "not needed: the budget of 6 judged videos (or 9 attempts) was reached first",
+   "downloadUrl": null,
+   "file": null,
+   "track": null,
+   "footageDeleted": false,
+   "verdict": null,
+   "source": "youtube-cc",
+   "id": "3LbW_XoMEt4",
+   "pageUrl": "https://www.youtube.com/watch?v=3LbW_XoMEt4",
+   "licence": {
+    "name": "Creative Commons Attribution (CC BY)",
+    "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+    "redistributable": true
+   },
+   "query": "dumbbell lateral raise front view demonstration"
+  }
+ ],
+ "episodes": [
+  {
+   "name": "agent-g1-youtube-cc-bGcrurcvkpk",
+   "rank": 1,
+   "quality": 0.991,
+   "candidateKey": "youtube-cc-bGcrurcvkpk",
+   "robot": "g1",
+   "out": "data/demos/agent-g1-youtube-cc-bGcrurcvkpk.json",
+   "retargeter": "retarget.mts",
+   "poseOnly": false,
+   "startSeconds": 21,
+   "seconds": 6,
+   "stats": {
+    "tracked": 100,
+    "limited": 0,
+    "lagMsBefore": 20,
+    "lagMsAfter": 0
+   },
+   "provenance": {
+    "source": "youtube-cc",
+    "id": "bGcrurcvkpk",
+    "pageUrl": "https://www.youtube.com/watch?v=bGcrurcvkpk",
+    "licence": {
+     "name": "Creative Commons Attribution (CC BY)",
+     "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+     "redistributable": true
+    },
+    "author": "Fitness Volt",
+    "authorUrl": "https://www.youtube.com/channel/UCWHcXX6Zd8Kti_Uujn0E4Nw",
+    "title": "Dumbbell Lateral Raise for Strong Shoulders",
+    "query": "dumbbell lateral raise front view demonstration",
+    "fetchedAt": "2026-09-19T08:45:56.525Z"
+   }
+  },
+  {
+   "name": "agent-g1-youtube-cc-TM6se0vr1VA",
+   "rank": 2,
+   "quality": 0.986,
+   "candidateKey": "youtube-cc-TM6se0vr1VA",
+   "robot": "g1",
+   "out": "data/demos/agent-g1-youtube-cc-TM6se0vr1VA.json",
+   "retargeter": "retarget.mts",
+   "poseOnly": false,
+   "startSeconds": 12.5125,
+   "seconds": 6,
+   "stats": {
+    "tracked": 100,
+    "limited": 1,
+    "lagMsBefore": 20,
+    "lagMsAfter": 0
+   },
+   "provenance": {
+    "source": "youtube-cc",
+    "id": "TM6se0vr1VA",
+    "pageUrl": "https://www.youtube.com/watch?v=TM6se0vr1VA",
+    "licence": {
+     "name": "Creative Commons Attribution (CC BY)",
+     "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+     "redistributable": true
+    },
+    "author": "Barbell Logic",
+    "authorUrl": "https://www.youtube.com/channel/UCgq2gIfNc3Iqb2PxZDAgeHw",
+    "title": "Dumbbell Lateral Raise: Gym Shorts (How To)",
+    "query": "dumbbell lateral raise front view demonstration",
+    "fetchedAt": "2026-09-19T08:46:00.023Z"
+   }
+  },
+  {
+   "name": "agent-g1-youtube-cc-WWhSHS2DrKQ",
+   "rank": 3,
+   "quality": 0.97,
+   "candidateKey": "youtube-cc-WWhSHS2DrKQ",
+   "robot": "g1",
+   "out": "data/demos/agent-g1-youtube-cc-WWhSHS2DrKQ.json",
+   "retargeter": "retarget.mts",
+   "poseOnly": false,
+   "startSeconds": 6.7067000000000005,
+   "seconds": 6,
+   "stats": {
+    "tracked": 95.3,
+    "limited": 0,
+    "lagMsBefore": 20,
+    "lagMsAfter": 0
+   },
+   "provenance": {
+    "source": "youtube-cc",
+    "id": "WWhSHS2DrKQ",
+    "pageUrl": "https://www.youtube.com/watch?v=WWhSHS2DrKQ",
+    "licence": {
+     "name": "Creative Commons Attribution (CC BY)",
+     "url": "https://creativecommons.org/licenses/by/3.0/legalcode",
+     "redistributable": true
+    },
+    "author": "Coach Bobby Bluford",
+    "authorUrl": "https://www.youtube.com/channel/UCiiaJ-JOVbQjGGO8URN0KLQ",
+    "title": "Dumbbell Lateral Raises",
+    "query": "dumbbell lateral raise front view demonstration",
+    "fetchedAt": "2026-09-19T08:46:03.497Z"
+   }
+  }
+ ],
+ "retargetFailures": [],
+ "versions": {
+  "agent": "0.1.0",
+  "node": "v24.15.0",
+  "yt-dlp": "2026.07.04",
+  "mediapipe": "0.10.14 (pinned)",
+  "poseModel": "pose_landmarker_lite.task",
+  "extractor": "scripts/extract_pose.py",
+  "planner": "gemini-flash-latest"
+ }
+}

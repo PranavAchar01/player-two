@@ -1,0 +1,41 @@
+[08:44:04] run 20260919-084403-dumbbell-lateral-raise-de7e: "dumbbell lateral raise" -> g1, up to 6 videos, 6 s each
+[08:44:04] plan: started
+[08:44:07] plan: gemini (gemini-flash-latest): 5 queries, both arm, arm_elevation 65 x1 sideways
+[08:44:07] search: started
+[08:44:09] search: pexels.com answered with a bot check (HTTP 403). Not bypassed. Set PEXELS_API_KEY to use the official API instead.
+[08:44:13] search: youtube Y29xKcze8Ik kept (Creative Commons Attribution (CC BY))
+[08:44:16] search: youtube pgrWjBfaFe8 kept (Creative Commons Attribution (CC BY))
+[08:44:18] search: youtube TM6se0vr1VA kept (Creative Commons Attribution (CC BY))
+[08:44:19] search: youtube v0y1ofwURX4 kept (Creative Commons Attribution (CC BY))
+[08:44:22] search: youtube bGcrurcvkpk kept (Creative Commons Attribution (CC BY))
+[08:44:24] search: youtube v3YOWW1G0lU kept (Creative Commons Attribution (CC BY))
+[08:44:26] search: youtube gtLbK3irtwA kept (Creative Commons Attribution (CC BY))
+[08:44:28] search: youtube WWhSHS2DrKQ kept (Creative Commons Attribution (CC BY))
+[08:44:29] search: youtube 3LbW_XoMEt4 kept (Creative Commons Attribution (CC BY))
+[08:44:29] search: 9 candidates (pexels 0 usable, youtube-cc 9 usable). Fetching until 6 are judged, at most 9 attempts
+[08:44:29] fetch: started
+[08:44:31] fetch: youtube-cc-Y29xKcze8Ik failed: YouTube refused the media download (HTTP 403). Clip dropped, no workaround attempted.
+[08:44:33] fetch: youtube-cc-pgrWjBfaFe8 failed: YouTube refused the media download (HTTP 403). Clip dropped, no workaround attempted.
+[08:44:33] fetch: youtube-cc-TM6se0vr1VA downloaded, extracting pose
+[08:44:33] judge: started
+[08:44:33] judge: youtube-cc-TM6se0vr1VA ACCEPTED score 0.984
+[08:44:33] fetch: youtube-cc-v0y1ofwURX4 downloaded, extracting pose
+[08:44:34] judge: youtube-cc-v0y1ofwURX4 rejected score 0.987 (one continuous person, motion direction)
+[08:44:34] fetch: youtube-cc-bGcrurcvkpk downloaded, extracting pose
+[08:44:34] judge: youtube-cc-bGcrurcvkpk ACCEPTED score 0.985
+[08:44:34] fetch: youtube-cc-v3YOWW1G0lU downloaded, extracting pose
+[08:44:34] judge: youtube-cc-v3YOWW1G0lU rejected score 0.878 (motion direction)
+[08:44:37] fetch: youtube-cc-gtLbK3irtwA downloaded, extracting pose
+[08:45:52] judge: youtube-cc-gtLbK3irtwA rejected score 0.824 (frontal view, motion direction)
+[08:45:52] fetch: youtube-cc-WWhSHS2DrKQ downloaded, extracting pose
+[08:45:52] judge: youtube-cc-WWhSHS2DrKQ ACCEPTED score 0.981
+[08:45:52] fetch: 6 of 8 attempted videos fetched and tracked, 2 failed
+[08:45:52] judge: 3 accepted, 3 rejected
+[08:45:52] retarget: started
+[08:45:56] retarget: agent-g1-youtube-cc-bGcrurcvkpk via retarget.mts {"tracked":100,"limited":0,"lagMsBefore":20,"lagMsAfter":0}
+[08:46:00] retarget: agent-g1-youtube-cc-TM6se0vr1VA via retarget.mts {"tracked":100,"limited":1,"lagMsBefore":20,"lagMsAfter":0}
+[08:46:03] retarget: agent-g1-youtube-cc-WWhSHS2DrKQ via retarget.mts {"tracked":95.3,"limited":0,"lagMsBefore":20,"lagMsAfter":0}
+[08:46:03] retarget: 3 episodes written for the g1, 0 failed
+[08:46:03] write: started
+[08:46:03] write: data/runs/20260919-084403-dumbbell-lateral-raise-de7e/run.json and data/runs/20260919-084403-dumbbell-lateral-raise-de7e/REPORT.md
+[08:46:03] done: 3 episodes, report at data/runs/20260919-084403-dumbbell-lateral-raise-de7e/REPORT.md

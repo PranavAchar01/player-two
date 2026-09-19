@@ -36,6 +36,84 @@ success on server replay, client and replay agree, correct hand made first conta
 holds, joint-range clamps, speed cap, torque saturation, self-collision, command jerk, dropped frames,
 minimum length. Thresholds are in `LIMITS` in `src/sim/episode.ts`.
 
+## Agent
+
+Give it a task in plain words and it builds a small, traceable set of robot demonstrations from videos of
+people doing that task.
+
+```bash
+pnpm dlx tsx scripts/agent/agent.mts "dumbbell lateral raise" --robot g1 --max-videos 6 --seconds 6 --sources pexels,youtube-cc
+# or open /agent, type the task and press "Start run". The page shows the run live.
+```
+
+Steps, each written to `data/runs/<runId>/run.json` as it happens (`REPORT.md` beside it is the readable version):
+
+1. Plan. Gemini (`gemini-flash-latest`, falling back to `gemini-flash-lite-latest`, key from `GEMINI_API_KEY`)
+   fills in a fixed form: 4 to 6 search queries, which arm matters, and one machine-checkable motion signature
+   (`arm_elevation`, `elbow_flexion` or `wrist_oscillation` with a threshold and a count). The answer is
+   treated as untrusted and validated. With no key, or on any failure, deterministic queries are used.
+2. Search, one request at a time, at least 1.5 s apart, never more than 25 videos per run.
+3. Fetch to `data/sources/` (gitignored) and extract pose with the pinned `scripts/extract_pose.py` command.
+4. Judge the footage from the track numbers only: tracked frames, arm visibility, person size, limbs in frame,
+   frontal view, facing the camera, arm motion, one continuous person (no cuts, including front-to-back cuts),
+   whether the planned motion occurs, and its direction (a front raise is not a lateral raise). If the busiest
+   stretch of a clip fails, every other whole-second window is tried and the best passing one is pinned.
+   Every rejection states the number and the bar, for example "shoulders turned 50.2 deg, limit 35 deg".
+5. Retarget accepted clips with `scripts/retarget.mts` (for the G1, `scripts/mirror.mts` is the fallback).
+6. Rank the episodes and write the run. Each episode carries its source URL, licence, author and query, both
+   in the run and inside the demo file.
+
+Licence policy: only footage that may be reused is kept. `pexels` is the Pexels licence. `youtube-cc` searches
+with YouTube's Creative Commons filter and then keeps only videos whose own metadata says Creative Commons,
+at most 240 s long, downloading the first 60 s at 720p or lower. `--allow-standard-license` exists for the
+command line only and is off by default. With it on, standard-licence footage is deleted right after pose
+extraction and the episode is marked `poseOnly: true`, so it is never rendered next to its source video.
+
+Pexels search pages sit behind a bot check that refuses headless browsers. The agent records that and moves
+on. It does not work around it. Set `PEXELS_API_KEY` (free) and the same source uses the official Pexels API.
+
+Limits, honestly: the output is retargeted kinematic demonstrations, joint targets that follow a person's
+motion. The agent does not train a policy, and nothing here shows that a policy trained on these episodes
+would work. Video gives no object state and no contact forces, so the dumbbell, the pot or the door are not
+in the data at all: only the arm motion is. One camera gives poor depth, which is why the judge insists on
+frontal footage. The pose extractor follows one person, so the judge notices a cut or a switch between
+people but not a bystander who is never tracked. The footage checks are fixed thresholds tuned on a handful
+of clips, and the motion signature checks that a motion of the right kind happened, not that the exercise
+was done well. YouTube refuses some media downloads (HTTP 403). Those clips are dropped, not worked around.
+
+## Other robots
+
+The same pose track can drive real fixed-base arms, not only the G1:
+
+```bash
+pnpm dlx tsx scripts/retarget.mts --track data/tracks/<id>.json --robot so101|panda|g1 \
+  [--arm left|right|auto] [--start <seconds>|auto] [--seconds <n>] --out data/demos/<name>.json
+```
+
+Exit code 0 and exactly one line on stdout: `{"out", "robot", "stats"}`. `/render?demo=<name>&mode=source|robot`
+shows any of them; `scripts/capture.mts` and `scripts/peek.mts` work unchanged.
+
+- `vendor/so101`: TheRobotStudio SO-ARM101, the official MJCF from `SO-ARM100/Simulation/SO101` (Apache-2.0).
+  `vendor/franka_emika_panda`: MuJoCo Menagerie (Apache-2.0). Both unmodified on disk; `armXml` in
+  `src/sim/arm.ts` sets the timestep, adds the table and gravity compensation, and for the SO-101 swaps the
+  inline kp=998 for the identified STS3215 gain (17.8) from the same repo, because the stock gain reads every
+  motion as torque saturation.
+- `src/sim/arm.ts`: generic arm. Joints, actuators and gripper are discovered from the compiled model; position
+  IK is numeric (damped least squares on a finite-difference Jacobian), with the forearm direction and a home
+  posture in the null space; `ArmSim` is the same 250 Hz / 50 Hz fixed-step physics as the G1.
+- `src/sim/armRetarget.ts`: one human arm drives the gripper in TASK space. Wrist relative to shoulder, in arm
+  lengths, mirrored, scaled to 0.85 of the room the robot measurably has around a per-robot virtual shoulder
+  (a table-mounted arm cannot hang its hand below its base, so "hanging" becomes "reaching down to the table").
+  Depth comes from foreshortening, attenuated and smoothed harder than the other axes.
+- `src/sim/track.ts`: what the G1 mirror and the arms share (zero-phase smoothing, 50 Hz interpolation,
+  window picking, lag measurement). `src/sim/mirror.ts` is the G1 full-body mirror, unchanged in output.
+
+Arm limits worth knowing: a robot's joint speed cap is real, so fast human motion (the Panda allows 2.175 rad/s)
+is followed late and the stats say so (`speedCapPct`, `trackingErrorCm*`). The gripper reads the pose model's
+index and thumb points, which barely move between an open hand and a fist at stock-clip resolution, so on real
+footage it has only ever stayed open; closing is proven on synthetic landmarks only. Wrist orientation is not
+retargeted.
+
 ## Known limits
 
 - The webcam path has not been exercised with a real camera yet. If the robot's arms cross over when

@@ -1,8 +1,14 @@
 import * as THREE from "three";
-import type { Sim } from "@/sim/sim";
+import type { MjData, MjModel } from "@mujoco/mujoco";
 
 const PLANE = 0, SPHERE = 2, CAPSULE = 3, CYLINDER = 5, BOX = 6, MESH = 7;
 const COLLISION_GROUP = 3;
+
+/** Anything with a compiled model and a live state can be drawn: the G1 task sim, the free mirror, an arm. */
+export interface Drawable {
+  model: MjModel;
+  data: MjData;
+}
 
 /** Draws every MuJoCo geom with three.js, in MuJoCo's own z-up coordinates. */
 export class Viewer {
@@ -10,7 +16,7 @@ export class Viewer {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(38, 1, 0.05, 50);
   private meshes: THREE.Mesh[] = [];
-  private sim?: Sim;
+  private sim?: Drawable;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -29,7 +35,7 @@ export class Viewer {
     this.camera.lookAt(...look);
   }
 
-  setSim(sim: Sim) {
+  setSim(sim: Drawable) {
     for (const m of this.meshes) {
       this.scene.remove(m);
       (m.material as THREE.Material).dispose();
