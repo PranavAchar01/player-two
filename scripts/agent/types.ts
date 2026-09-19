@@ -17,6 +17,8 @@ export const MAX_VIDEOS_CAP = 25;
  * and the hour it takes. The pacing, the licence checks and the one-at-a-time rule are the same as for a small run.
  */
 export const CLI_MAX_VIDEOS_CAP = 80;
+/** An episode is kept only if the robot followed the person for at least this share of its ticks. */
+export const MIN_TRACKED_PCT = 85;
 /**
  * Download attempts allowed per judged video asked for. YouTube refuses about 40 percent of media downloads
  * (HTTP 403) and those clips are dropped, not retried, so a budget of N judged needs room for about 2N attempts.

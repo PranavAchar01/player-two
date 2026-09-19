@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEMOS = [
     {
         "id": "g1-shoulder-press",
-        "run": "20260919-095031-dumbbell-shoulder-press-9180",
+        "run": "20260919-212705-dumbbell-shoulder-press-4721",
         "robot": "Unitree G1",
         "robotId": "g1",
         "task": "do a dumbbell shoulder press",
@@ -22,11 +22,11 @@ DEMOS = [
     },
     {
         "id": "so101-lateral-raise",
-        "run": "20260919-085358-dumbbell-lateral-raise-caa9",
+        "run": "20260919-212702-raise-one-arm-out-to-the-side-and-lower-4f57",
         "robot": "SO-101",
         "robotId": "so101",
-        "task": "follow a dumbbell lateral raise",
-        "match": ["lateral raise", "side raise"],
+        "task": "raise one arm out to the side and lower it",
+        "match": ["arm out to the side", "one arm", "lateral raise", "side raise"],
     },
 ]
 STEP_NAMES = {
@@ -37,10 +37,28 @@ STEP_NAMES = {
     "retarget": "Retarget",
     "write": "Write dataset",
 }
-MAX_CLIPS = 6
-# Footage is shown mirrored so the person and the robot move on the same side of the screen, which makes burnt-in
-# captions read backwards. Until footage is shown unflipped, captioned clips stay out of the public gallery.
-CAPTIONED = {"agent-so101-youtube-cc-TM6se0vr1VA", "agent-g1-youtube-cc-2HdeGWc0UF4"}
+MAX_CLIPS = 24
+# capture.mts renders the footage panel (the left 38% of the frame) mirrored, which makes burnt-in titles read
+# backwards. The panel is flipped back here, skeleton overlay and all, so the two stay aligned. The panel's own label
+# is lifted from the original frame and put back, and the spot where its mirror image landed is patched from the
+# footage just below it.
+PANEL_W = 486  # round(1280 * 0.38)
+UNMIRROR = (
+    f"scale=1280:720,split=3[a][b][l];[b]crop={PANEL_W}:720:0:0,hflip,split[f1][f2];"
+    "[f2]crop=72:34:396:56[patch];[f1][patch]overlay=396:21[f];[l]crop=380:32:22:22[lab];"
+    "[a][f]overlay=0:0[c];[c][lab]overlay=22:22"
+)
+# Looked at by eye and kept out of the gallery: single-camera leg depth crossed the G1's legs for the whole clip.
+LEGS_CROSSED = {"agent-g1-youtube-cc-sDFgsK82CWc", "agent-g1-youtube-cc-EVORy2hce68"}
+# Same rule as MIN_TRACKED_PCT in scripts/agent/types.ts. The recorded runs predate that gate, so it is applied here:
+# an episode where the robot followed less than this share of the clip is not shown in the gallery. The run's own
+# numbers are left as recorded; the site says how many of the accepted clips are shown.
+MIN_TRACKED_PCT = 85
+
+
+def tracked(ep: dict) -> float:
+    st = ep.get("stats", {})
+    return st.get("tracked", st.get("trackedPct", 100))
 
 
 def short(reason: str) -> str:
@@ -66,9 +84,10 @@ def main(site: Path) -> None:
         clips = []
         dest = site / "media/demo" / d["id"]
         dest.mkdir(parents=True, exist_ok=True)
-        for ep in sorted(run["episodes"], key=lambda e: e.get("rank", 99)):
+        episodes = [e for e in run["episodes"] if tracked(e) >= MIN_TRACKED_PCT]
+        for ep in sorted(episodes, key=lambda e: e.get("rank", 99)):
             src = ROOT / "media" / f"source-{ep['name']}.mp4"
-            if not src.exists() or len(clips) >= MAX_CLIPS or ep["name"] in CAPTIONED:
+            if not src.exists() or len(clips) >= MAX_CLIPS or ep["name"] in LEGS_CROSSED:
                 continue
             n = len(clips) + 1
             mp4, jpg = dest / f"clip-{n}.mp4", dest / f"clip-{n}.jpg"
@@ -80,8 +99,8 @@ def main(site: Path) -> None:
                     "quiet",
                     "-i",
                     str(src),
-                    "-vf",
-                    "scale=1280:720",
+                    "-filter_complex",
+                    UNMIRROR,
                     "-c:v",
                     "libx264",
                     "-crf",
@@ -109,8 +128,8 @@ def main(site: Path) -> None:
                     str(src),
                     "-frames:v",
                     "1",
-                    "-vf",
-                    "scale=960:540",
+                    "-filter_complex",
+                    UNMIRROR + ",scale=960:540",
                     "-q:v",
                     "3",
                     str(jpg),

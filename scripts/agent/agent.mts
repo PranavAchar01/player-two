@@ -19,7 +19,7 @@ import { planTask } from "./plan";
 import { renderReport } from "./report";
 import { retargetClip } from "./retarget";
 import { Pacer, searchPexels, searchYoutube } from "./search";
-import { CLI_MAX_VIDEOS_CAP, RUN_ID, type Candidate, type Episode, type Run, type StepName } from "./types";
+import { CLI_MAX_VIDEOS_CAP, MIN_TRACKED_PCT, RUN_ID, type Candidate, type Episode, type Run, type StepName } from "./types";
 import { parseArgv, validateRunRequest } from "./validate";
 
 const run$ = promisify(execFile);
@@ -212,7 +212,11 @@ try {
       const judgedArm = c.verdict!.metrics?.armUsed;
       const r = await retargetClip(c, options.robot, options.seconds, id, poseOnly, judgedStart, judgedArm === "left" || judgedArm === "right" ? judgedArm : null);
       // Footage quality says how far the input can be trusted, retarget stats say how much of it the robot could follow.
-      const followed = typeof r.stats.tracked === "number" ? (r.stats.tracked / 100) * (1 - (r.stats.limited ?? 0) / 100) : c.verdict!.score;
+      const tracked = r.stats.tracked ?? r.stats.trackedPct, limited = r.stats.limited ?? r.stats.speedCapPct ?? 0;
+      // A clip can pass the footage judge and still lose the person inside the window once it is retargeted tick by
+      // tick. An episode where the robot held still for a large share of the clip is not a demonstration of the task.
+      if (typeof tracked === "number" && tracked < MIN_TRACKED_PCT) throw new Error(`the robot could follow only ${tracked}% of the clip (the pose was lost for the rest), need ${MIN_TRACKED_PCT}%`);
+      const followed = typeof tracked === "number" ? (tracked / 100) * (1 - limited / 100) : c.verdict!.score;
       const episode: Episode = {
         name: path.basename(r.out, ".json"), rank: 0, quality: +(0.6 * c.verdict!.score + 0.4 * followed).toFixed(3), candidateKey: c.key, robot: options.robot, out: r.out, retargeter: r.retargeter, poseOnly,
         startSeconds: r.startSeconds, seconds: options.seconds, stats: r.stats,
