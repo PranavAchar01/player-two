@@ -12,7 +12,7 @@
     "prebuild": "node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "export": "uv run --with pyarrow --with numpy scripts/export_lerobot.py .player-two/episodes .player-two/dataset"
+    "export": "uv run --python 3.12 --with 'lerobot[dataset]' scripts/export_lerobot.py .player-two/episodes .player-two/dataset"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",

@@ -27,7 +27,7 @@ server behind an HTTPS tunnel and show the wall from that URL so the QR code poi
 - `src/sim/episode.ts`: upload format (joint targets and flags only, never pixels), the judge, and a
   scripted pilot that goes through the same retarget path as a webcam.
 - `src/app/api/episodes`: validates, replays the actions in MuJoCo on the server, scores the gates.
-- `scripts/export_lerobot.py`: accepted episodes to LeRobot v2.1 layout plus a dataset card that
+- `scripts/export_lerobot.py`: accepted episodes written through the LeRobot library (format v3.0) and loaded back as a check, plus a dataset card (`CARD.md`) that
   lists every rejected episode with the gate that failed it.
 
 ## Gates
