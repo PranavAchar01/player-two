@@ -19,7 +19,7 @@ const WINDOW_S = 6;
 
 for (const file of (await readdir("data/tracks")).filter((f) => f.endsWith(".json"))) {
   const id = file.replace(".json", "");
-  const track = JSON.parse(await readFile(`data/tracks/${file}`, "utf8")) as { fps: number; frames: Frame[] };
+  const track = JSON.parse(await readFile(`data/tracks/${file}`, "utf8")) as { fps: number; width: number; height: number; frames: Frame[] };
   const at = (tick: number) => track.frames[Math.min(track.frames.length - 1, Math.round((tick / TICK_HZ) * track.fps))];
   const totalTicks = Math.floor((track.frames.length / track.fps) * TICK_HZ);
   const taken = new Set<number>();
@@ -56,7 +56,7 @@ for (const file of (await readdir("data/tracks")).filter((f) => f.endsWith(".jso
       found = true;
       taken.add(start);
       await fetch(`${base}/api/episodes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(e) }).catch(() => null);
-      await writeFile(`data/demos/${id}-${side}-${slot}.json`, JSON.stringify({ source: `https://www.youtube.com/watch?v=${id}`, startSeconds: start / TICK_HZ, task, ctrl: e.ctrl, skeleton, gates: verdict.gates }));
+      await writeFile(`data/demos/${id}-${side}-${slot}.json`, JSON.stringify({ source: `https://www.youtube.com/watch?v=${id}`, aspect: track.width / track.height, startSeconds: start / TICK_HZ, task, ctrl: e.ctrl, skeleton, gates: verdict.gates }));
       console.log(id, side, slot, `accepted: video ${(start / TICK_HZ).toFixed(1)}s to ${((start + e.ctrl.length) / TICK_HZ).toFixed(1)}s`);
     }
     if (!found) console.log(id, side, slot, "no stretch of this video passed every gate");

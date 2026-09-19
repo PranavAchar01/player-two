@@ -44,11 +44,13 @@ async function clip(demo: string, mode: "robot" | "split", name: string) {
 await mkdir(out, { recursive: true });
 const robotClips: string[] = [];
 const splitClips: string[] = [];
-for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "pilot-left-high", "wZnsZsMywrY-right-low", "pilot-right-high"]) robotClips.push(await clip(demo, "robot", `robot-${demo}`));
+const only = process.env.ONLY;
+if (only !== "split") for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "pilot-left-high", "wZnsZsMywrY-right-low", "pilot-right-high"]) robotClips.push(await clip(demo, "robot", `robot-${demo}`));
 for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "wZnsZsMywrY-right-low"]) splitClips.push(await clip(demo, "split", `split-${demo}`));
 await browser.close();
 
 for (const [list, name] of [[robotClips, "demo"], [splitClips, "skeleton-vs-robot"]] as const) {
+  if (list.length === 0) continue;
   await writeFile(`${out}/${name}.txt`, list.map((f) => `file '${f.split("/").pop()}'`).join("\n"));
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", `${out}/${name}.txt`, "-c", "copy", "-movflags", "+faststart", `${out}/${name}.mp4`]);
   await rm(`${out}/${name}.txt`);

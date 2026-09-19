@@ -11,6 +11,7 @@ interface Demo {
   task: TaskSpec;
   ctrl: number[][];
   skeleton?: (number[][] | null)[];
+  aspect?: number;
 }
 
 const PRE = 30; // ticks of rest before the motion
@@ -37,7 +38,13 @@ export default function Render() {
       const rig = await loadRig();
       const viewer = new Viewer(robot.current!);
       const side = demo.task.side === "left" ? 1 : -1;
-      viewer.setCamera([1.95, 0.5 * side, 1.22], [0, 0.16 * side, 1.04]);
+      if (split) viewer.setCamera([2.35, 0.3 * side, 1.2], [0, 0.2 * side, 1.02]);
+      else viewer.setCamera([1.95, 0.5 * side, 1.22], [0, 0.16 * side, 1.04]);
+      // Fit the whole episode's skeleton to the panel once, so it neither jitters in scale nor sits tiny in a corner.
+      const aspect = demo.aspect ?? 16 / 9;
+      const all = (demo.skeleton ?? []).flatMap((f) => f ?? []);
+      const xs = all.map((p) => (1 - p[0]) * aspect), ys = all.map((p) => p[1]);
+      const box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
       const rest = [...rig.rest.left, ...rig.rest.right];
       let sim = new Sim(rig, demo.task);
       viewer.setSim(sim);
@@ -63,18 +70,21 @@ export default function Render() {
           ctx.clearRect(0, 0, c.width, c.height);
           const pts = demo.skeleton?.[Math.min(demo.skeleton.length - 1, Math.max(0, n - PRE))];
           if (!pts) return;
+          const scale = Math.min((c.width * 0.84) / (box.x1 - box.x0), (c.height * 0.7) / (box.y1 - box.y0));
+          const px = (p: number[]) => c.width / 2 + ((1 - p[0]) * aspect - (box.x0 + box.x1) / 2) * scale;
+          const py = (p: number[]) => c.height * 0.54 + (p[1] - (box.y0 + box.y1) / 2) * scale;
           ctx.strokeStyle = "#67e8f9";
-          ctx.lineWidth = 10;
+          ctx.lineWidth = 12;
           ctx.lineCap = "round";
           for (const [a, b] of BONES) {
             ctx.beginPath();
-            ctx.moveTo((1 - pts[a][0]) * c.width, pts[a][1] * c.height);
-            ctx.lineTo((1 - pts[b][0]) * c.width, pts[b][1] * c.height);
+            ctx.moveTo(px(pts[a]), py(pts[a]));
+            ctx.lineTo(px(pts[b]), py(pts[b]));
             ctx.stroke();
           }
           ctx.fillStyle = "#67e8f9";
           ctx.beginPath();
-          ctx.arc((1 - pts[0][0]) * c.width, pts[0][1] * c.height, 26, 0, Math.PI * 2);
+          ctx.arc(px(pts[0]), py(pts[0]), scale * 0.055, 0, Math.PI * 2);
           ctx.fill();
         },
       };
