@@ -25,17 +25,18 @@ page.on("pageerror", (e) => console.log("pageerror", String(e).slice(0, 200)));
 
 /** Cuts the stretch of source footage an episode came from into mirrored, person-centred portrait frames. */
 async function footage(demo: string) {
-  const d = JSON.parse(await readFile(`data/demos/${demo}.json`, "utf8")) as { video: string; startSeconds: number; ctrl: number[][]; skeleton: (number[][] | null)[] };
+  const d = JSON.parse(await readFile(`data/demos/${demo}.json`, "utf8")) as { video: string; startSeconds: number; ctrl: number[][]; skeleton: ((number[] | null)[] | null)[] };
   const probe = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", `data/sources/${d.video}.mp4`]).toString().trim().split(",").map(Number);
   const [W, H] = probe;
-  const pts = d.skeleton.flatMap((f) => f ?? []);
+  const pts = d.skeleton.flatMap((f) => f ?? []).filter((p): p is number[] => p !== null);
   const xs = pts.map((p) => p[0] * W), ys = pts.map((p) => p[1] * H);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const h = Math.min(H, Math.max((Math.max(...ys) - Math.min(...ys)) * 2.1, ((Math.max(...xs) - Math.min(...xs)) * 1.15) / (730 / 1080)));
   const w = Math.min(W, h * (730 / 1080));
   const crop = { w: Math.round(w), h: Math.round(h), x: Math.round(Math.min(W - w, Math.max(0, cx - w / 2))), y: Math.round(Math.min(H - h, Math.max(0, cy - h * 0.42))) };
-  const t0 = Math.max(0, d.startSeconds - 30 / 50);
-  const dur = (30 + d.ctrl.length + 90) / 50 + 0.2;
+  const pad = (d as { task?: unknown }).task ? [30, 90] : [0, 0]; // mirror clips have no padding
+  const t0 = Math.max(0, d.startSeconds - pad[0] / 50);
+  const dur = (pad[0] + d.ctrl.length + pad[1]) / 50 + 0.2;
   const dir = `public/demos/${demo}-frames`;
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
@@ -76,7 +77,7 @@ if (!only) for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", 
 if (!only || only === "split") for (const demo of ["wZnsZsMywrY-right-mid", "wZnsZsMywrY-left-low", "wZnsZsMywrY-right-low"]) splitClips.push(await clip(demo, "split", `split-${demo}`));
 await browser.close();
 
-for (const [list, name] of [[robotClips, "demo"], [splitClips, "skeleton-vs-robot"], [sourceClips, "video-to-robot"]] as const) {
+for (const [list, name] of [[robotClips, "demo"], [splitClips, "skeleton-vs-robot"], [sourceClips, process.env.OUT_NAME ?? "video-to-robot"]] as const) {
   if (list.length === 0) continue;
   await writeFile(`${out}/${name}.txt`, list.map((f) => `file '${f.split("/").pop()}'`).join("\n"));
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", `${out}/${name}.txt`, "-c", "copy", "-movflags", "+faststart", `${out}/${name}.mp4`]);

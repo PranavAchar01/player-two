@@ -12,7 +12,7 @@ interface Demo {
   ctrl: number[][];
   body?: BodyCommand[];
   stats?: { tracked: number; limited: number; lagMsBefore?: number; lagMsAfter?: number };
-  skeleton?: (number[][] | null)[];
+  skeleton?: ((number[] | null)[] | null)[];
   aspect?: number;
   video?: string;
   startSeconds?: number;
@@ -27,8 +27,9 @@ interface FramesMeta {
   crop: { x: number; y: number; w: number; h: number };
 }
 
-const PRE = 30; // ticks of rest before the motion
-const POST = 90; // ticks after it, to watch the pendulum swing
+const TASK_PRE = 30; // ticks of rest before a task episode
+const TASK_POST = 90; // ticks after it, to watch the pendulum swing
+const WARMUP = 50; // unseen ticks that bring a mirror clip into its first pose before frame 0
 const BONES = [[1, 3], [3, 5], [2, 4], [4, 6], [1, 2], [1, 7], [2, 8], [7, 8]];
 
 declare global {
@@ -60,12 +61,19 @@ export default function Render() {
       else viewer.setCamera([1.95, 0.5 * side, 1.22], [0, 0.16 * side, 1.04]);
       // Fit the whole episode's skeleton to the panel once, so it neither jitters in scale nor sits tiny in a corner.
       const aspect = demo.aspect ?? 16 / 9;
-      const all = (demo.skeleton ?? []).flatMap((f) => f ?? []);
+      const all = (demo.skeleton ?? []).flatMap((f) => f ?? []).filter((p): p is number[] => p !== null);
       const xs = all.map((p) => (1 - p[0]) * aspect), ys = all.map((p) => p[1]);
       const box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+      // a mirror clip follows the footage exactly, so it has no padding: the robot is warmed up off screen instead
+      const PRE = demo.task ? TASK_PRE : 0;
+      const POST = demo.task ? TASK_POST : 0;
+      const warm = (s: Sim) => {
+        if (!demo.task) for (let i = 0; i < WARMUP; i++) s.tick(demo.ctrl[0], demo.body?.[0]);
+      };
       const rest = [...rig.rest.left, ...rig.rest.right];
       let sim = new Sim(rig, demo.task);
       viewer.setSim(sim);
+      warm(sim);
       let at = 0;
       setHud({ task: demo.task ? taskSentence(demo.task) : `Free mirror, full body, kinematic root. Arm tracking lag ${demo.stats?.lagMsBefore ?? "?"} ms, ${demo.stats?.lagMsAfter ?? "?"} ms with preview.`, source: footage ? "motion source: stock video, pose estimated per frame" : demo.source ? "motion source: online video, pose only" : "motion source: scripted pilot", split, struck: false, footage });
       const total = PRE + demo.ctrl.length + POST;
@@ -83,6 +91,7 @@ export default function Render() {
           if (n < at) {
             sim = new Sim(rig, demo.task);
             viewer.setSim(sim);
+            warm(sim);
             at = 0;
           }
           let struck = false;
@@ -104,12 +113,14 @@ export default function Render() {
           ctx.globalAlpha = meta ? 0.9 : 1;
           ctx.lineCap = "round";
           for (const [a, b] of BONES) {
+            if (!pts[a] || !pts[b]) continue;
             ctx.beginPath();
             ctx.moveTo(px(pts[a]), py(pts[a]));
             ctx.lineTo(px(pts[b]), py(pts[b]));
             ctx.stroke();
           }
           ctx.fillStyle = "#67e8f9";
+          if (!pts[0]) return;
           ctx.beginPath();
           ctx.arc(px(pts[0]), py(pts[0]), meta ? 9 : scale * 0.055, 0, Math.PI * 2);
           ctx.fill();

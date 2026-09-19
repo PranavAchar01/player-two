@@ -77,6 +77,8 @@ export class Rig {
   private readonly leg: Record<Side, Chain>;
   /** ankle height below the pelvis origin when standing straight */
   readonly standAnkleDrop: number;
+  /** sagittal tilt of the thigh and shin joint-to-joint lines when the robot stands straight (they are not vertical) */
+  private readonly legNeutral: [number, number];
   readonly rest: Record<Side, number[]>;
   readonly slots: Record<Side, Record<Slot, Vec3>>;
 
@@ -94,7 +96,9 @@ export class Rig {
     const leg = (side: Side) => chain(legJoints(side).slice(0, 4), [`${side}_hip_pitch_link`, `${side}_knee_link`, `${side}_ankle_pitch_link`]);
     this.arm = { left: arm("left"), right: arm("right") };
     this.leg = { left: leg("left"), right: leg("right") };
-    this.standAnkleDrop = -this.fkChain(this.leg.left, [0, 0, 0, 0]).end[2];
+    const straight = this.fkChain(this.leg.left, [0, 0, 0, 0]);
+    this.standAnkleDrop = -straight.end[2];
+    this.legNeutral = [Math.atan2(-straight.upper[0], -straight.upper[2]), Math.atan2(-straight.fore[0], -straight.fore[2])];
     // Menagerie's "stand" keyframe has the arms hanging clear of the hips; use it as the rest pose and IK seed.
     const stand = /<key name="stand"[^>]*qpos="([^"]+)"/.exec(baseXml)?.[1].trim().split(/\s+/).map(Number) ?? [];
     const standArm = (first: number) => (stand.length >= first + 4 ? stand.slice(first, first + 4) : [0.2, 0.2, 0, 1.28]);
@@ -158,7 +162,10 @@ export class Rig {
 
   /** Hip pitch, roll, yaw and knee that point the thigh and shin along the targets (pelvis frame). */
   solveLeg(side: Side, thigh: Vec3, shin: Vec3, prev: number[]): { q: number[]; ankleDrop: number } {
-    const q = this.solveChain(this.leg[side], thigh, shin, prev, 4);
+    // A person standing straight has vertical thighs and shins; the G1 standing straight does not, because its
+    // joint origins are staggered front to back. Tilt the targets by the robot's own neutral so straight maps to straight.
+    const tilt = (v: Vec3, a: number): Vec3 => ({ x: v.x * Math.cos(a) + v.z * Math.sin(a), y: v.y, z: -v.x * Math.sin(a) + v.z * Math.cos(a) });
+    const q = this.solveChain(this.leg[side], tilt(thigh, this.legNeutral[0]), tilt(shin, this.legNeutral[1]), prev, 4);
     return { q, ankleDrop: -this.fkChain(this.leg[side], q).end[2] };
   }
 
