@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Player Two
 
-## Getting Started
+A webcam is all it takes to teach a robot. Open the page, move your arms, and a simulated humanoid
+upper body (MuJoCo, in the browser) mirrors you. Every episode is re-simulated on the server and has
+to pass eleven measured gates before it is written into a LeRobot-format dataset.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev --port 3218        # operator page at /, dataset wall at /wall
+pnpm dlx tsx scripts/seed.mts   # optional: six scripted-pilot episodes plus two bad ones
+pnpm export                 # or press "Approve batch" on the wall
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Webcam access needs a secure origin. `localhost` counts. For other laptops in the room, put the dev
+server behind an HTTPS tunnel and show the wall from that URL so the QR code points at it.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How it works
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `src/sim/scene.ts`: the robot and task as MJCF. Pinned upper body, 4 joints per arm, joint limits
+  and 25 N·m torque cap taken from Unitree's G1 arm (re-check before quoting). Task: strike a
+  pendulum that hangs on the arc a sideways arm raise sweeps, so the motion stays in the camera plane.
+- `src/sim/retarget.ts`: MediaPipe world landmarks to joint targets. Mirrored. Depth is attenuated.
+  Fail closed: low landmark visibility holds the last target. Targets are clamped and rate limited.
+- `src/sim/sim.ts`: fixed-step simulation (250 Hz physics, 50 Hz control). Same code in browser and Node.
+- `src/sim/episode.ts`: upload format (joint targets and flags only, never pixels), the judge, and a
+  scripted pilot that goes through the same retarget path as a webcam.
+- `src/app/api/episodes`: validates, replays the actions in MuJoCo on the server, scores the gates.
+- `scripts/export_lerobot.py`: accepted episodes to LeRobot v2.1 layout plus a dataset card that
+  lists every rejected episode with the gate that failed it.
 
-## Learn More
+## Gates
 
-To learn more about Next.js, take a look at the following resources:
+success on server replay, client and replay agree, correct hand made first contact, tracking-confidence
+holds, joint-range clamps, speed cap, torque saturation, self-collision, command jerk, dropped frames,
+minimum length. Thresholds are in `LIMITS` in `src/sim/episode.ts`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Known limits
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The webcam path has not been exercised with a real camera yet. If the robot's arms cross over when
+  yours do not, tick "Flip left and right" on the operator page.
+- Replay on the wall is open-loop playback of recorded actions. No policy is trained here.
+- Episodes are stored on local disk under `.player-two/`.
