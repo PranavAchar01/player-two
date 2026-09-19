@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { loadRig } from "@/client/load";
 import { Viewer } from "@/client/viewer";
 import { taskSentence, type TaskSpec } from "@/sim/scene";
-import { Sim } from "@/sim/sim";
+import { Sim, type BodyCommand } from "@/sim/sim";
 
 interface Demo {
   source?: string;
   task: TaskSpec | null;
   ctrl: number[][];
-  stats?: { tracked: number; limited: number; clamped: number };
+  body?: BodyCommand[];
+  stats?: { tracked: number; limited: number; lagMsBefore?: number; lagMsAfter?: number };
   skeleton?: (number[][] | null)[];
   aspect?: number;
   video?: string;
@@ -54,7 +55,7 @@ export default function Render() {
       const rig = await loadRig();
       const viewer = new Viewer(robot.current!);
       const side = !demo.task ? 0 : demo.task.side === "left" ? 1 : -1;
-      if (!demo.task) viewer.setCamera([2.5, 0, 1.18], [0, 0, 1.0]);
+      if (!demo.task) viewer.setCamera([3.3, 0, 0.95], [0, 0, 0.72]);
       else if (split) viewer.setCamera([2.35, 0.3 * side, 1.2], [0, 0.2 * side, 1.02]);
       else viewer.setCamera([1.95, 0.5 * side, 1.22], [0, 0.16 * side, 1.04]);
       // Fit the whole episode's skeleton to the panel once, so it neither jitters in scale nor sits tiny in a corner.
@@ -66,9 +67,10 @@ export default function Render() {
       let sim = new Sim(rig, demo.task);
       viewer.setSim(sim);
       let at = 0;
-      setHud({ task: demo.task ? taskSentence(demo.task) : `Free mirror, no task. Speed cap active on ${demo.stats?.limited.toFixed(0) ?? "?"}% of ticks, tracking lost on ${demo.stats ? (100 - demo.stats.tracked).toFixed(0) : "?"}%.`, source: footage ? "motion source: stock video, pose estimated per frame" : demo.source ? "motion source: online video, pose only" : "motion source: scripted pilot", split, struck: false, footage });
+      setHud({ task: demo.task ? taskSentence(demo.task) : `Free mirror, full body, kinematic root. Arm tracking lag ${demo.stats?.lagMsBefore ?? "?"} ms, ${demo.stats?.lagMsAfter ?? "?"} ms with preview.`, source: footage ? "motion source: stock video, pose estimated per frame" : demo.source ? "motion source: online video, pose only" : "motion source: scripted pilot", split, struck: false, footage });
       const total = PRE + demo.ctrl.length + POST;
       const ctrlAt = (n: number) => (n < PRE ? rest : demo.ctrl[Math.min(demo.ctrl.length - 1, n - PRE)]);
+      const bodyAt = (n: number) => demo.body?.[Math.min(demo.body.length - 1, Math.max(0, n - PRE))];
       window.p2 = {
         ticks: total,
         frame: async (n: number) => {
@@ -84,7 +86,7 @@ export default function Render() {
             at = 0;
           }
           let struck = false;
-          for (; at <= n; at++) struck = sim.tick(ctrlAt(at)).success;
+          for (; at <= n; at++) struck = sim.tick(ctrlAt(at), bodyAt(at)).success;
           viewer.render();
           setHud((h) => (h.struck === struck ? h : { ...h, struck }));
           const c = bones.current;

@@ -40,7 +40,7 @@ export type ArmLandmarks = [Landmark, Landmark, Landmark];
  * previous target is held. The pose is solved against the real robot kinematics, which clamps
  * to the joint range, and the result is rate limited.
  */
-export function retargetArm(rig: Rig, lm: ArmLandmarks | null, side: Side, prev: number[], flip = false): { target: number[]; flags: RetargetFlags } {
+export function retargetArm(rig: Rig, lm: ArmLandmarks | null, side: Side, prev: number[], flip = false, maxSpeed = SPEED_LIMIT): { target: number[]; flags: RetargetFlags } {
   if (!lm || lm.some((p) => p.visibility < MIN_VISIBILITY)) return { target: prev, flags: { held: true, clamped: false, limited: false } };
   const [s, e, w] = lm;
   const upper = norm(toRobotFrame(sub(e, s), flip));
@@ -54,7 +54,7 @@ export function retargetArm(rig: Rig, lm: ArmLandmarks | null, side: Side, prev:
   const want = solved.map((v, i) => rig.rest[side][i] + (v - rig.rest[side][i]) * blend);
   const range = rig.jointRange(side);
   const straight = upper.x * fore.x + upper.y * fore.y + upper.z * fore.z > 0.9;
-  const maxStep = SPEED_LIMIT / TICK_HZ;
+  const maxStep = maxSpeed / TICK_HZ;
   let limited = false;
   const target = want.map((v, i) => {
     // yaw is ill-conditioned while the elbow is nearly straight, so it does not count as operator speed
@@ -95,10 +95,10 @@ export class Operator {
   constructor(private readonly rig: Rig) {
     this.prev = { left: rig.rest.left.slice(), right: rig.rest.right.slice() };
   }
-  step(human: { left: ArmLandmarks | null; right: ArmLandmarks | null }, flip = false) {
+  step(human: { left: ArmLandmarks | null; right: ArmLandmarks | null }, flip = false, maxSpeed = SPEED_LIMIT) {
     const forRobot: Record<Side, ArmLandmarks | null> = flip ? human : { left: human.right, right: human.left };
-    const l = retargetArm(this.rig, forRobot.left, "left", this.prev.left, flip);
-    const r = retargetArm(this.rig, forRobot.right, "right", this.prev.right, flip);
+    const l = retargetArm(this.rig, forRobot.left, "left", this.prev.left, flip, maxSpeed);
+    const r = retargetArm(this.rig, forRobot.right, "right", this.prev.right, flip, maxSpeed);
     this.prev = { left: l.target, right: r.target };
     const tracked = [forRobot.left && l.flags, forRobot.right && r.flags].filter((f): f is RetargetFlags => Boolean(f));
     return {

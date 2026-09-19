@@ -1,5 +1,12 @@
 import type { MainModule, MjData, MjModel } from "@mujoco/mujoco";
-import { ACTUATORS, SIDES, SLOTS, SLOT_ANGLE, STRIKE_DISTANCE, SUBSTEPS, armJoints, g1Xml, meshFiles, type Side, type Slot, type TaskSpec, type Vec3 } from "./scene";
+import { ACTUATORS, SIDES, SLOTS, SLOT_ANGLE, STRIKE_DISTANCE, SUBSTEPS, armJoints, g1Xml, legJoints, meshFiles, type Side, type Slot, type TaskSpec, type Vec3 } from "./scene";
+
+/** Full-body command for free mirror mode. Legs are [left 6, right 6]; the root is a kinematic pose. */
+export interface BodyCommand {
+  legs: number[];
+  rootPos: [number, number, number];
+  rootYaw: number;
+}
 
 /** Reads a file of the vendored G1 model, e.g. "g1.xml" or "assets/pelvis.STL". */
 export type AssetReader = (path: string) => Promise<Uint8Array>;
@@ -54,10 +61,22 @@ function lmStep(J: number[][], r: number[], mu: number): number[] {
  * The robot, compiled once without a task. Owns the arm inverse kinematics, which is solved
  * numerically against the real G1 kinematics rather than assumed from a simplified chain.
  */
+interface Chain {
+  qadr: number[];
+  range: [number, number][];
+  a: number;
+  b: number;
+  c: number;
+}
+
 export class Rig {
   readonly model: MjModel;
+  private readonly pelvis: number;
   private readonly scratch: MjData;
-  private readonly arm: Record<Side, { qadr: number[]; range: [number, number][]; shoulder: number; elbow: number; wrist: number }>;
+  private readonly arm: Record<Side, Chain>;
+  private readonly leg: Record<Side, Chain>;
+  /** ankle height below the pelvis origin when standing straight */
+  readonly standAnkleDrop: number;
   readonly rest: Record<Side, number[]>;
   readonly slots: Record<Side, Record<Slot, Vec3>>;
 
@@ -65,17 +84,17 @@ export class Rig {
     this.model = mj.MjModel.from_xml_string(g1Xml(baseXml, null));
     this.scratch = new mj.MjData(this.model);
     const id = (type: { value: number }, name: string) => mj.mj_name2id(this.model, type.value, name);
-    const arm = (side: Side) => {
-      const jids = armJoints(side).map((j) => id(mj.mjtObj.mjOBJ_JOINT, j));
-      return {
-        qadr: jids.map((j) => this.model.jnt_qposadr[j]),
-        range: jids.map((j) => [this.model.jnt_range[j * 2], this.model.jnt_range[j * 2 + 1]] as [number, number]),
-        shoulder: id(mj.mjtObj.mjOBJ_BODY, `${side}_shoulder_pitch_link`),
-        elbow: id(mj.mjtObj.mjOBJ_BODY, `${side}_elbow_link`),
-        wrist: id(mj.mjtObj.mjOBJ_BODY, `${side}_wrist_yaw_link`),
-      };
+    this.pelvis = id(mj.mjtObj.mjOBJ_BODY, "pelvis");
+    const chain = (joints: string[], bodies: [string, string, string]): Chain => {
+      const jids = joints.map((j) => id(mj.mjtObj.mjOBJ_JOINT, j));
+      const [a, b, c] = bodies.map((n) => id(mj.mjtObj.mjOBJ_BODY, n));
+      return { qadr: jids.map((j) => this.model.jnt_qposadr[j]), range: jids.map((j) => [this.model.jnt_range[j * 2], this.model.jnt_range[j * 2 + 1]] as [number, number]), a, b, c };
     };
+    const arm = (side: Side) => chain(armJoints(side), [`${side}_shoulder_pitch_link`, `${side}_elbow_link`, `${side}_wrist_yaw_link`]);
+    const leg = (side: Side) => chain(legJoints(side).slice(0, 4), [`${side}_hip_pitch_link`, `${side}_knee_link`, `${side}_ankle_pitch_link`]);
     this.arm = { left: arm("left"), right: arm("right") };
+    this.leg = { left: leg("left"), right: leg("right") };
+    this.standAnkleDrop = -this.fkChain(this.leg.left, [0, 0, 0, 0]).end[2];
     // Menagerie's "stand" keyframe has the arms hanging clear of the hips; use it as the rest pose and IK seed.
     const stand = /<key name="stand"[^>]*qpos="([^"]+)"/.exec(baseXml)?.[1].trim().split(/\s+/).map(Number) ?? [];
     const standArm = (first: number) => (stand.length >= first + 4 ? stand.slice(first, first + 4) : [0.2, 0.2, 0, 1.28]);
@@ -92,8 +111,15 @@ export class Rig {
   private readonly compiled = new Map<string, MjModel>();
 
   /** Compiling the meshed model is expensive, so each task's model is built once and shared. */
+  private mirror?: MjModel;
+
+  /** The free-mirror robot: no pendulum, pelvis driven kinematically, stiffer arms. */
+  mirrorModel(): MjModel {
+    return (this.mirror ??= this.mj.MjModel.from_xml_string(g1Xml(this.baseXml, null, true)));
+  }
+
   modelFor(task: TaskSpec | null): MjModel {
-    if (!task) return this.model; // free mirror: the bare robot, no pendulum
+    if (!task) return this.mirrorModel();
     const key = `${task.side}-${task.slot}`;
     let m = this.compiled.get(key);
     if (!m) this.compiled.set(key, (m = this.mj.MjModel.from_xml_string(g1Xml(this.baseXml, this.slots[task.side][task.slot]))));
@@ -117,23 +143,37 @@ export class Rig {
     return this.arm[side].range;
   }
 
-  private fk(side: Side, q: number[]) {
-    const a = this.arm[side];
-    a.qadr.forEach((adr, i) => (this.scratch.qpos[adr] = q[i]));
+  /** Directions of the two links of a chain, and where it ends relative to the pelvis origin. */
+  private fkChain(c: Chain, q: number[]) {
+    c.qadr.forEach((adr, i) => (this.scratch.qpos[adr] = q[i]));
     this.mj.mj_kinematics(this.model, this.scratch);
     const pos = (b: number) => [0, 1, 2].map((k) => this.scratch.xpos[b * 3 + k]);
-    const [s, e, w] = [pos(a.shoulder), pos(a.elbow), pos(a.wrist)];
-    return { upper: unit(sub(e, s)), fore: unit(sub(w, e)), wrist: w };
+    const [p0, p1, p2] = [pos(c.a), pos(c.b), pos(c.c)];
+    return { upper: unit(sub(p1, p0)), fore: unit(sub(p2, p1)), wrist: p2, end: sub(p2, pos(this.pelvis)) };
+  }
+
+  private fk(side: Side, q: number[]) {
+    return this.fkChain(this.arm[side], q);
+  }
+
+  /** Hip pitch, roll, yaw and knee that point the thigh and shin along the targets (pelvis frame). */
+  solveLeg(side: Side, thigh: Vec3, shin: Vec3, prev: number[]): { q: number[]; ankleDrop: number } {
+    const q = this.solveChain(this.leg[side], thigh, shin, prev, 4);
+    return { q, ankleDrop: -this.fkChain(this.leg[side], q).end[2] };
   }
 
   /** Joint angles whose upper-arm and forearm directions best match the targets, starting from `prev`. */
   solve(side: Side, upper: Vec3, fore: Vec3, prev: number[], iterations = 4): number[] {
+    return this.solveChain(this.arm[side], upper, fore, prev, iterations);
+  }
+
+  private solveChain(c: Chain, upper: Vec3, fore: Vec3, prev: number[], iterations: number): number[] {
     const target = [...unit([upper.x, upper.y, upper.z]), ...unit([fore.x, fore.y, fore.z])];
     const residual = (q: number[]) => {
-      const k = this.fk(side, q);
+      const k = this.fkChain(c, q);
       return sub([...k.upper, ...k.fore], target);
     };
-    const range = this.arm[side].range;
+    const range = c.range;
     let q = prev.slice();
     for (let it = 0; it < iterations; it++) {
       const r = residual(q);
@@ -173,6 +213,7 @@ export class Sim {
   private readonly forearm = new Set<number>();
   private readonly taskBodies = new Set<number>();
   private readonly act: { ctrl: number; qadr: number; dof: number; limit: number }[];
+  private readonly legCtrl: number[];
   private firstTouch: Side | null = null;
   private succeeded = false;
 
@@ -195,6 +236,7 @@ export class Sim {
       const j = id(mj.mjtObj.mjOBJ_JOINT, name);
       return { ctrl: id(mj.mjtObj.mjOBJ_ACTUATOR, name), qadr: this.model.jnt_qposadr[j], dof: this.model.jnt_dofadr[j], limit: this.model.jnt_actfrcrange[j * 2 + 1] };
     });
+    this.legCtrl = SIDES.flatMap(legJoints).map((name) => id(mj.mjtObj.mjOBJ_ACTUATOR, name));
     // start with the arms hanging, not in the model's bent-elbow zero pose
     const restQ = [...rig.rest.left, ...rig.rest.right];
     this.act.forEach((a, i) => {
@@ -205,9 +247,14 @@ export class Sim {
   }
 
   /** Advance one control tick (SUBSTEPS physics steps) with the given arm joint targets. */
-  tick(ctrl: number[]): TickInfo {
+  tick(ctrl: number[], body?: BodyCommand): TickInfo {
     const { mj, model, data } = this;
     this.act.forEach((a, i) => (data.ctrl[a.ctrl] = ctrl[i]));
+    if (body && !this.task) {
+      this.legCtrl.forEach((c, i) => (data.ctrl[c] = body.legs[i]));
+      body.rootPos.forEach((v, i) => (data.mocap_pos[i] = v));
+      [Math.cos(body.rootYaw / 2), 0, 0, Math.sin(body.rootYaw / 2)].forEach((v, i) => (data.mocap_quat[i] = v));
+    }
     let torqueSaturated = false;
     let selfCollision = false;
     for (let s = 0; s < SUBSTEPS; s++) {

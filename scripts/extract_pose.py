@@ -6,7 +6,7 @@ from mediapipe.tasks import python as mpp
 from mediapipe.tasks.python import vision
 
 video, model, out = sys.argv[1:4]
-IDS = [0, 11, 12, 13, 14, 15, 16, 23, 24]
+IDS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
 opts = vision.PoseLandmarkerOptions(base_options=mpp.BaseOptions(model_asset_path=model, delegate=mpp.BaseOptions.Delegate.CPU), running_mode=vision.RunningMode.VIDEO, num_poses=1)
 cap = cv2.VideoCapture(video)
 fps = cap.get(cv2.CAP_PROP_FPS) or 30.0

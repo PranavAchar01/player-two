@@ -26,7 +26,10 @@ export const armJoints = (side: Side) => JOINTS.map((j) => `${side}_${j}_joint`)
 /** Order of the 8 numbers in an action or state vector: left arm, then right arm. */
 export const ACTUATORS = SIDES.flatMap(armJoints);
 
-export const SPEED_LIMIT = 6; // rad/s, conservative teleoperation cap
+export const SPEED_LIMIT = 6; // rad/s, conservative cap for live teleoperation and the dataset
+export const MIRROR_SPEED_LIMIT = 20; // rad/s, free mirror of pre-recorded video, where the motion is known in advance
+export const LEG_JOINTS = ["hip_pitch", "hip_roll", "hip_yaw", "knee", "ankle_pitch", "ankle_roll"] as const;
+export const legJoints = (side: Side) => LEG_JOINTS.map((j) => `${side}_${j}_joint`);
 export const TIMESTEP = 0.004;
 export const SUBSTEPS = 5; // control tick = 50 Hz
 export const TICK_HZ = 1 / (TIMESTEP * SUBSTEPS);
@@ -42,13 +45,17 @@ export const STRIKE_DISTANCE = 0.08;
 /** Mesh files the model references, relative to the model directory. */
 export const meshFiles = (baseXml: string) => [...baseXml.matchAll(/<mesh [^>]*file="([^"]+)"/g)].map((m) => `assets/${m[1]}`);
 
-export function g1Xml(baseXml: string, bob: Vec3 | null): string {
+/**
+ * `mirror` builds the free-mirror variant: the pelvis becomes a mocap body whose pose is set every tick
+ * from the dancer (a kinematic root, not a balancing robot), and the arms get stiffer gains.
+ */
+export function g1Xml(baseXml: string, bob: Vec3 | null, mirror = false): string {
   let xml = baseXml
     .replace(/<freejoint name="floating_base_joint"\s*\/>/, "")
     .replace(/<keyframe>[\s\S]*?<\/keyframe>/, "")
     .replace(/<option [^>]*\/>/, `<option timestep="${TIMESTEP}" integrator="implicitfast"/>`)
     // the stock kp=500 saturates the 25 N·m shoulder motors on any brisk human motion
-    .replace(/<position class="g1" name="((?:left|right)_(?:shoulder_pitch|shoulder_roll|shoulder_yaw|elbow)_joint)"/g, '<position class="g1" kp="120" dampratio="1" name="$1"')
+    .replace(/<position class="g1" name="((?:left|right)_(?:shoulder_pitch|shoulder_roll|shoulder_yaw|elbow)_joint)"/g, `<position class="g1" kp="${mirror ? 400 : 120}" dampratio="1" name="$1"`)
     .replace(/<body name="((?:left|right)_(?:shoulder|elbow|wrist)[^"]*)"/g, '<body gravcomp="1" name="$1"');
   const task = bob
     ? `
@@ -63,6 +70,7 @@ export function g1Xml(baseXml: string, bob: Vec3 | null): string {
       </body>
     </body>`
     : "";
+  if (mirror) xml = xml.replace('<body name="pelvis"', '<body mocap="true" name="pelvis"');
   xml = xml.replace("<worldbody>", `<worldbody>\n    <geom name="floor" type="plane" size="4 4 0.1" rgba="0.09 0.1 0.12 1"/>${task}`);
   return xml;
 }
