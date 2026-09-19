@@ -17,6 +17,17 @@ export const MEDIAPIPE_PIN = "0.10.14";
 
 const exists = (p: string) => stat(p).then((s) => s.size > 0, () => false);
 
+/**
+ * What an earlier run already left on disk for this video. Keys are stable across runs (`<source>-<id>`), so a
+ * second run on a similar task meets many of the same videos, and asking YouTube for them again would cost their
+ * bandwidth and a likely refusal for nothing. A track alone is enough: the judge and the retargeter read only
+ * the track, so footage is not fetched again just to sit next to it.
+ */
+export async function reusable(key: string, root = "data"): Promise<{ file: string | null; track: string | null }> {
+  const file = `${root}/sources/${key}.mp4`, track = `${root}/tracks/${key}.json`;
+  return { file: (await exists(file)) ? file : null, track: (await exists(track)) ? track : null };
+}
+
 export async function probeDuration(file: string): Promise<number | null> {
   try {
     const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { timeout: 30_000 });

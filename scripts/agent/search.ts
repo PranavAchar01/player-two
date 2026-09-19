@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { REQUEST_GAP_MS, type Candidate, type Licence, type SearchLog } from "./types";
+import { REQUEST_GAP_MS, YT_RESULTS_PER_QUERY, type Candidate, type Licence, type SearchLog } from "./types";
 
 const run = promisify(execFile);
 // Says what this is. The Pexels file CDN serves it; nothing here pretends to be a person's browser.
@@ -54,6 +54,23 @@ export function keepYoutubeEntry(meta: YoutubeMeta, allowStandardLicense: boolea
   return { keep: true, reason: null };
 }
 
+/**
+ * Which hits of one flat search page are worth a metadata request: plain video ids, short enough, not already
+ * examined in this run (`seen` is shared by all of a run's queries and sources) and not listed twice on the page.
+ * The same video turns up under several queries, and it must be asked about, downloaded and emitted once.
+ * Pure: the caller marks an id as seen when it actually spends a request on it, so hits left unread when a search
+ * stops early can still be picked up by a later query.
+ */
+export function freshYoutubeIds(flat: { id?: unknown; duration?: unknown }[], seen: ReadonlySet<string>): string[] {
+  const ids = new Set<string>();
+  for (const f of flat) {
+    if (typeof f.id !== "string" || !/^[A-Za-z0-9_-]{11}$/.test(f.id) || seen.has(`yt:${f.id}`)) continue;
+    if (typeof f.duration === "number" && f.duration > MAX_YOUTUBE_SECONDS) continue; // too long: not worth a metadata request
+    ids.add(f.id);
+  }
+  return [...ids];
+}
+
 const str = (v: unknown, max = 120) => (typeof v === "string" && v.trim() ? v.replace(/[\x00-\x1f\x7f<>|`]/g, " ").trim().slice(0, max) : null);
 
 const blank = (c: Pick<Candidate, "source" | "id" | "pageUrl" | "licence" | "query"> & Partial<Candidate>): Candidate => ({
@@ -76,32 +93,32 @@ export async function searchYoutube(queries: string[], want: number, allowStanda
     await pacer.wait();
     let flat: { id?: unknown; duration?: unknown }[] = [];
     try {
-      const { stdout } = await run("yt-dlp", ["--quiet", "--no-warnings", "--flat-playlist", "--playlist-end", "10", "-J", url], { timeout: 90_000, maxBuffer: 64 << 20 });
+      // One flat page read per query, however deep: depth adds no requests here. What it adds is one paced metadata
+      // request per fresh hit below, and that loop stops as soon as `want` usable videos are in hand.
+      const { stdout } = await run("yt-dlp", ["--quiet", "--no-warnings", "--flat-playlist", "--playlist-end", String(YT_RESULTS_PER_QUERY), "-J", url], { timeout: 120_000, maxBuffer: 64 << 20 });
       flat = ((JSON.parse(stdout) as { entries?: unknown[] }).entries ?? []) as typeof flat;
     } catch {
       entry.note = "yt-dlp search failed";
       continue;
     }
     entry.found = flat.length;
-    for (const f of flat) {
+    for (const id of freshYoutubeIds(flat, seen)) {
       if (kept() >= want) break;
-      if (typeof f.id !== "string" || !/^[A-Za-z0-9_-]{11}$/.test(f.id) || seen.has(`yt:${f.id}`)) continue;
-      seen.add(`yt:${f.id}`);
-      if (typeof f.duration === "number" && f.duration > MAX_YOUTUBE_SECONDS) continue; // not worth a metadata request
+      seen.add(`yt:${id}`);
       await pacer.wait();
       let meta: YoutubeMeta;
       try {
-        const { stdout } = await run("yt-dlp", ["--quiet", "--no-warnings", "--no-playlist", "-J", `https://www.youtube.com/watch?v=${f.id}`], { timeout: 90_000, maxBuffer: 64 << 20 });
+        const { stdout } = await run("yt-dlp", ["--quiet", "--no-warnings", "--no-playlist", "-J", `https://www.youtube.com/watch?v=${id}`], { timeout: 90_000, maxBuffer: 64 << 20 });
         meta = JSON.parse(stdout) as YoutubeMeta;
       } catch {
         continue;
       }
-      const gate = keepYoutubeEntry({ ...meta, id: f.id }, allowStandardLicense);
+      const gate = keepYoutubeEntry({ ...meta, id }, allowStandardLicense);
       const licence = youtubeLicence(meta.license);
-      const c = blank({ source: licence.redistributable ? "youtube-cc" : "youtube", id: f.id, pageUrl: `https://www.youtube.com/watch?v=${f.id}`, licence, query, title: str(meta.title), author: str(meta.uploader), authorUrl: typeof meta.channel_url === "string" && meta.channel_url.startsWith("https://www.youtube.com/") ? meta.channel_url : null, durationS: typeof meta.duration === "number" ? meta.duration : null });
+      const c = blank({ source: licence.redistributable ? "youtube-cc" : "youtube", id, pageUrl: `https://www.youtube.com/watch?v=${id}`, licence, query, title: str(meta.title), author: str(meta.uploader), authorUrl: typeof meta.channel_url === "string" && meta.channel_url.startsWith("https://www.youtube.com/") ? meta.channel_url : null, durationS: typeof meta.duration === "number" ? meta.duration : null });
       if (!gate.keep) { c.stage = "skipped"; c.note = gate.reason; } else entry.kept++;
       candidates.push(c);
-      log(`search: youtube ${f.id} ${gate.keep ? "kept" : "skipped"} (${licence.name})`);
+      log(`search: youtube ${id} ${gate.keep ? "kept" : "skipped"} (${licence.name})`);
     }
   }
   return { candidates, searches };

@@ -19,7 +19,9 @@ for (const [side, slot] of [["left", "high"], ["right", "high"]] as const) {
 }
 execFileSync("node", ["scripts/copy-assets.mjs"]);
 
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist", "--hide-scrollbars"], defaultViewport: { width: 1920, height: 1080 } });
+// Gallery clips are shown at 720p, so CAPTURE_SIZE=1280x720 renders them more than twice as fast as full HD.
+const [VIEW_W, VIEW_H] = (process.env.CAPTURE_SIZE ?? "1920x1080").split("x").map(Number);
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist", "--hide-scrollbars"], defaultViewport: { width: VIEW_W, height: VIEW_H } });
 const page = await browser.newPage();
 page.on("pageerror", (e) => console.log("pageerror", String(e).slice(0, 200)));
 
@@ -40,7 +42,7 @@ async function footage(demo: string) {
   const dir = `public/demos/${demo}-frames`;
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
-  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(t0), "-t", String(dur), "-i", `data/sources/${d.video}.mp4`, "-vf", `fps=25,crop=${crop.w}:${crop.h}:${crop.x}:${crop.y},hflip,scale=730:1080`, "-q:v", "3", `${dir}/%05d.jpg`]);
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", String(t0), "-t", String(dur), "-i", `data/sources/${d.video}.mp4`, "-vf", `fps=25,crop=${crop.w}:${crop.h}:${crop.x}:${crop.y},hflip,scale=${Math.round(VIEW_W * 0.38)}:${VIEW_H}`, "-q:v", "3", `${dir}/%05d.jpg`]);
   const count = (await import("node:fs")).readdirSync(dir).filter((f) => f.endsWith(".jpg")).length;
   await writeFile(`${dir}/meta.json`, JSON.stringify({ count, t0, fps: 25, W, H, crop }));
 }

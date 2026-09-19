@@ -157,6 +157,42 @@ describe("footage judge", () => {
   });
 });
 
+describe("either arm, which is what a single-arm robot asks for", () => {
+  const EITHER = { ...RAISE, arm: "either" as Arm };
+  /** A two-armed raise whose LEFT arm keeps swinging out of the picture, and whose right arm is a little dimmer. */
+  const oneCleanArm = (): Track => {
+    const t = person();
+    return { ...t, frames: t.frames.map((f, i) => ({
+      ...f,
+      world: Object.fromEntries(Object.entries(f.world!).map(([k, v]) => [k, ["12", "14", "16"].includes(k) ? [v[0], v[1], v[2], 0.9] : v])),
+      image: Object.fromEntries(Object.entries(f.image!).map(([k, v]) => [k, i % 3 === 0 && ["13", "15"].includes(k) ? [v[0] + 0.6, v[1]] : v])),
+    })) };
+  };
+
+  it("judges the better arm instead of the busier one, and does not require both", () => {
+    const track = oneCleanArm();
+    // the left arm is the brighter one and moves just as much, so "moves more and is seen" alone would pick it and fail
+    const left = judgeFootage(track, { ...RAISE, arm: "left" }, 6);
+    expect(left.accepted).toBe(false);
+    expect(left.checks.filter((c) => !c.pass).map((c) => c.name)).toEqual(["limbs in frame"]);
+    const v = judgeFootage(track, EITHER, 6);
+    expect(v.metrics!.armUsed).toBe("right");
+    expect(v.accepted).toBe(true);
+    // the same footage is no good for a plan that really needs both arms
+    expect(judgeFootage(track, RAISE, 6).accepted).toBe(false);
+  });
+
+  it("accepts ordinary two-armed footage for a one-arm plan and reports a single arm", () => {
+    const v = judgeFootage(person(), EITHER, 6);
+    expect(v.accepted).toBe(true);
+    expect(["left", "right"]).toContain(v.metrics!.armUsed);
+  });
+
+  it("still rejects when neither arm is good enough", () => {
+    expect(judgeFootage(person({ visibility: 0.35 }), EITHER, 6).accepted).toBe(false);
+  });
+});
+
 describe("motion counters", () => {
   it("counts swings only when they are big enough", () => {
     const wave = Array.from({ length: 200 }, (_, i) => 10 * Math.sin(i / 8));

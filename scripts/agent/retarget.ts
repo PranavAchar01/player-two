@@ -19,8 +19,17 @@ export interface Retargeted {
 const numeric = (o: unknown): Record<string, number> => Object.fromEntries(Object.entries(typeof o === "object" && o !== null ? o : {}).filter((e): e is [string, number] => typeof e[1] === "number" && Number.isFinite(e[1])));
 const short = (err: unknown) => (err instanceof Error ? err.message : String(err)).split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 240);
 
-async function viaContract(trackKey: string, robot: Robot, seconds: number, out: string, start: number | null): Promise<Retargeted> {
-  const { stdout } = await run("pnpm", ["dlx", "tsx", "scripts/retarget.mts", "--track", `data/tracks/${trackKey}.json`, "--robot", robot, "--start", start === null ? "auto" : String(start), "--seconds", String(seconds), "--out", out], { timeout: 600_000, maxBuffer: 16 << 20 });
+/** Exported for its test. `arm` is the human arm the judge passed, and only an arm robot takes the flag. */
+export function contractArgs(trackKey: string, robot: Robot, seconds: number, out: string, start: number | null, arm: "left" | "right" | null): string[] {
+  const args = ["dlx", "tsx", "scripts/retarget.mts", "--track", `data/tracks/${trackKey}.json`, "--robot", robot, "--start", start === null ? "auto" : String(start), "--seconds", String(seconds), "--out", out];
+  // Left on "auto" the arm retargeter picks the arm whose wrist travels most, which in a two-armed video need not
+  // be the arm that cleared the footage checks. The episode must come from the arm that was judged.
+  if (robot !== "g1" && arm) args.push("--arm", arm);
+  return args;
+}
+
+async function viaContract(trackKey: string, robot: Robot, seconds: number, out: string, start: number | null, arm: "left" | "right" | null): Promise<Retargeted> {
+  const { stdout } = await run("pnpm", contractArgs(trackKey, robot, seconds, out, start, arm), { timeout: 600_000, maxBuffer: 16 << 20 });
   const last = stdout.trim().split("\n").at(-1) ?? "";
   const parsed = JSON.parse(last) as { out?: unknown; robot?: unknown; stats?: unknown };
   if (parsed.robot !== robot || typeof parsed.out !== "string") throw new Error("retarget.mts did not end with the agreed JSON line");
@@ -48,12 +57,12 @@ export async function viaMirror(trackKey: string, seconds: number, out: string, 
   return { out, retargeter: "mirror.mts", stats: {}, startSeconds: null };
 }
 
-export async function retargetClip(c: Candidate, robot: Robot, seconds: number, runId: string, poseOnly: boolean, start: number | null): Promise<Retargeted> {
+export async function retargetClip(c: Candidate, robot: Robot, seconds: number, runId: string, poseOnly: boolean, start: number | null, arm: "left" | "right" | null = null): Promise<Retargeted> {
   const out = `data/demos/agent-${robot}-${c.key}.json`;
   let result: Retargeted;
   if (await exists("scripts/retarget.mts")) {
     try {
-      result = await viaContract(c.key, robot, seconds, out, start);
+      result = await viaContract(c.key, robot, seconds, out, start, arm);
     } catch (err) {
       if (robot !== "g1") throw new Error(`retarget.mts failed: ${short(err)}`);
       result = await viaMirror(c.key, seconds, out, start);

@@ -1,14 +1,29 @@
 // Shared shapes for the agent trace. run.json is the contract between the CLI (writer) and the /agent page
 // (reader), so everything the page shows has to be in here and nothing in here may hold a secret.
 
+import type { Feasibility } from "./feasible";
+
 export const ROBOTS = ["g1", "so101", "panda"] as const;
 export type Robot = (typeof ROBOTS)[number];
 
 export const SOURCES = ["pexels", "youtube-cc"] as const;
 export type SourceName = (typeof SOURCES)[number];
 
-/** Hard ceiling on videos fetched in one run, whatever the caller asks for. Keeps a run polite and bounded. */
+/** Ceiling on JUDGED videos for a run started from the web page (POST /api/runs). Anyone who can open the page can start one, so it stays small. */
 export const MAX_VIDEOS_CAP = 25;
+/**
+ * Ceiling on JUDGED videos for a run started from the command line. It is higher because a demo task wants about
+ * 20 accepted clips, roughly half of judged clips are accepted, and the person typing the command owns the machine
+ * and the hour it takes. The pacing, the licence checks and the one-at-a-time rule are the same as for a small run.
+ */
+export const CLI_MAX_VIDEOS_CAP = 80;
+/**
+ * Download attempts allowed per judged video asked for. YouTube refuses about 40 percent of media downloads
+ * (HTTP 403) and those clips are dropped, not retried, so a budget of N judged needs room for about 2N attempts.
+ */
+export const ATTEMPTS_PER_BUDGET = 2;
+/** How far down one YouTube search the agent reads. Every hit costs a paced metadata request, so this is bounded. */
+export const YT_RESULTS_PER_QUERY = 30;
 /** Minimum gap between two requests to the same kind of remote service. */
 export const REQUEST_GAP_MS = 1500;
 
@@ -117,6 +132,8 @@ export interface Candidate {
   file: string | null;
   track: string | null;
   footageDeleted: boolean;
+  /** Set when an earlier run already left this video's footage or pose track on disk, so nothing was downloaded again. */
+  reused?: "footage" | "track";
   verdict: Verdict | null;
 }
 
@@ -160,6 +177,8 @@ export interface RunOptions {
   seconds: number;
   sources: SourceName[];
   allowStandardLicense: boolean;
+  /** Stop fetching once this many clips are accepted, even if the maxVideos budget is not used up. */
+  targetAccepted?: number;
 }
 
 export interface Run {
@@ -172,6 +191,8 @@ export interface Run {
   startedAt: string;
   finishedAt: string | null;
   error: string | null;
+  /** Whether the task suits the robot. Absent only in runs written before this check existed. */
+  feasibility?: Feasibility;
   steps: Step[];
   plan: Plan | null;
   searches: SearchLog[];

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { EMBODIMENTS, checkFeasibility, type Feasibility } from "../../../scripts/agent/feasible";
 import { MAX_VIDEOS_CAP, ROBOTS, SOURCES, type Candidate, type Robot, type Run, type RunSummary, type SourceName, type Step } from "../../../scripts/agent/types";
 
 const STEP_LABEL: Record<Step["name"], string> = { plan: "Plan", search: "Search", fetch: "Fetch and extract pose", judge: "Judge footage", retarget: "Retarget", write: "Write run" };
@@ -11,6 +12,19 @@ const dot = (status: string) => (status === "done" ? "bg-emerald-400" : status =
 function Out({ href, children }: { href: string | null; children: React.ReactNode }) {
   if (!href || !href.startsWith("https://")) return <span>{children}</span>;
   return <a href={href} target="_blank" rel="noreferrer noopener" className="text-cyan-300 underline decoration-cyan-300/30 underline-offset-2 hover:decoration-cyan-300">{children}</a>;
+}
+
+/** The same rules the CLI and the API apply, shown while typing and again on the finished run. */
+function FeasibilityNote({ f, className = "" }: { f: Feasibility; className?: string }) {
+  if (f.level === "ok") return null;
+  const refused = f.level === "refuse";
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${refused ? "border-rose-300/40 bg-rose-300/5 text-rose-100/90" : "border-amber-300/40 bg-amber-300/5 text-amber-100/90"} ${className}`}>
+      <div className="font-mono text-[10px] uppercase tracking-widest">{refused ? "Not possible for this robot" : "Heads up"}</div>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">{f.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+      {f.suggestion && <p className="mt-1 text-white/70">{f.suggestion}</p>}
+    </div>
+  );
 }
 
 function verdictOf(c: Candidate): string {
@@ -25,6 +39,8 @@ export default function Agent() {
   const [selected, setSelected] = useState<string | null>(null);
   const [form, setForm] = useState<{ task: string; robot: Robot; maxVideos: number; seconds: number; sources: SourceName[] }>({ task: "", robot: "g1", maxVideos: 6, seconds: 6, sources: [...SOURCES] });
   const [message, setMessage] = useState<string | null>(null);
+  // what the server said when it refused a robot and task combination (HTTP 422)
+  const [refusal, setRefusal] = useState<Feasibility | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const selectedRef = useRef<string | null>(null);
 
@@ -56,11 +72,16 @@ export default function Agent() {
     setRun(null);
   }
 
+  // Checked while typing so nobody has to press the button to learn that an arm cannot do jumping jacks.
+  const fit = useMemo(() => (form.task.trim().length >= 3 ? checkFeasibility(form.task, form.robot) : null), [form.task, form.robot]);
+
   async function start(e: React.FormEvent) {
     e.preventDefault();
     setMessage("starting…");
+    setRefusal(null);
     const res = await fetch("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
-    const body = (await res.json()) as { id?: string; error?: string };
+    const body = (await res.json()) as { id?: string; error?: string; reasons?: string[]; suggestion?: string | null };
+    if (res.status === 422 && Array.isArray(body.reasons)) setRefusal({ level: "refuse", reasons: body.reasons, suggestion: body.suggestion ?? undefined });
     if (!res.ok || !body.id) return setMessage(body.error ?? "could not start the run");
     setMessage("run started, the timeline fills in as it goes");
     pick(body.id);
@@ -81,10 +102,10 @@ export default function Agent() {
 
         <form onSubmit={start} className="space-y-3 rounded-xl border border-white/10 p-3">
           <h2 className="text-xs uppercase tracking-widest text-white/40">New run</h2>
-          <input className={input} placeholder="dumbbell lateral raise" value={form.task} maxLength={120} onChange={(e) => setForm({ ...form, task: e.target.value })} aria-label="Task" />
+          <input className={input} placeholder="dumbbell lateral raise" value={form.task} maxLength={120} onChange={(e) => { setRefusal(null); setForm({ ...form, task: e.target.value }); }} aria-label="Task" />
           <div className="grid grid-cols-3 gap-2">
             <label className="text-[11px] uppercase text-white/40">Robot
-              <select className={`${input} mt-1`} value={form.robot} onChange={(e) => setForm({ ...form, robot: e.target.value as Robot })}>{ROBOTS.map((r) => <option key={r} value={r} className="bg-[#0a0b0e]">{r}</option>)}</select>
+              <select className={`${input} mt-1`} value={form.robot} onChange={(e) => { setRefusal(null); setForm({ ...form, robot: e.target.value as Robot }); }}>{ROBOTS.map((r) => <option key={r} value={r} className="bg-[#0a0b0e]">{r}</option>)}</select>
             </label>
             <label className="text-[11px] uppercase text-white/40">Videos
               <input type="number" min={1} max={MAX_VIDEOS_CAP} className={`${input} mt-1`} value={form.maxVideos} onChange={(e) => setForm({ ...form, maxVideos: Number(e.target.value) })} />
@@ -100,9 +121,12 @@ export default function Agent() {
               </label>
             ))}
           </div>
-          <button type="submit" className="w-full rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-black disabled:opacity-40" disabled={form.task.trim().length < 3 || form.sources.length === 0}>Start run</button>
+          <p className="text-[11px] leading-relaxed text-white/45">{EMBODIMENTS[form.robot].label}: {EMBODIMENTS[form.robot].notes.join(" ")}</p>
+          {fit && <FeasibilityNote f={fit} />}
+          <button type="submit" className="w-full rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-black disabled:opacity-40" disabled={form.task.trim().length < 3 || form.sources.length === 0 || fit?.level === "refuse"}>Start run</button>
           {message && <p className="font-mono text-xs text-white/60">{message}</p>}
-          <p className="text-[11px] leading-relaxed text-white/35">Pexels licence and Creative Commons YouTube only. One run at a time, requests at least 1.5 s apart, at most {MAX_VIDEOS_CAP} videos.</p>
+          {refusal && fit?.level !== "refuse" && <FeasibilityNote f={refusal} />}
+          <p className="text-[11px] leading-relaxed text-white/35">Pexels licence and Creative Commons YouTube only. One run at a time, requests at least 1.5 s apart, at most {MAX_VIDEOS_CAP} judged videos from this page (the command line allows bigger runs).</p>
         </form>
 
         <div className="rounded-xl border border-white/10 p-3">
@@ -126,7 +150,7 @@ export default function Agent() {
               <div>
                 <div className={`font-mono text-xs uppercase tracking-[0.3em] ${tone(status)}`}>{status}{run.error ? ` · ${run.error}` : ""}</div>
                 <h1 className="mt-1 text-4xl font-semibold">{run.task}</h1>
-                <div className="mt-1 font-mono text-xs text-white/40">{run.id} · robot {run.options.robot} · {run.options.seconds} s per episode · {run.options.sources.join(" + ")}</div>
+                <div className="mt-1 font-mono text-xs text-white/40">{run.id} · robot {run.options.robot} · {run.options.seconds} s per episode · up to {run.options.maxVideos} judged{run.options.targetAccepted ? `, stops at ${run.options.targetAccepted} accepted` : ""} · {run.options.sources.join(" + ")}</div>
               </div>
               <div className="grid grid-cols-4 gap-2 text-center">
                 {([["found", run.candidates.length], ["judged", judged.length], ["accepted", judged.filter((c) => c.verdict!.accepted).length], ["episodes", run.episodes.length]] as const).map(([k, v]) => (
@@ -145,6 +169,10 @@ export default function Agent() {
               ))}
             </ol>
 
+            {run.feasibility && (run.feasibility.level === "ok"
+              ? <p className="font-mono text-xs text-white/40">task suits the {run.options.robot}: no capability it lacks is asked for</p>
+              : <FeasibilityNote f={run.feasibility} />)}
+
             {run.plan && (
               <div className="grid gap-4 rounded-xl border border-cyan-300/30 bg-cyan-300/5 p-4 lg:grid-cols-2">
                 <div>
@@ -162,8 +190,8 @@ export default function Agent() {
                       {run.searches.map((s, i) => (
                         <tr key={`${s.source}-${i}`} className="border-t border-white/5 align-top"><td className="py-1 pr-2 font-mono text-white/45">{s.source}</td><td className="pr-2 text-white/80">{s.query}{s.note && <div className="text-amber-200/80">{s.note}</div>}</td><td className="text-right tabular-nums text-white/60">{s.found}</td><td className="text-right tabular-nums text-white/60">{s.kept}</td></tr>
                       ))}
-                      {/* a source stops searching once it has enough candidates, so later queries can go unused */}
-                      {run.plan.queries.filter((q) => !run.searches.some((s) => s.query === q)).map((q) => <tr key={q} className="border-t border-white/5"><td className="py-1 pr-2 font-mono text-white/30">{run.steps[1].status === "done" ? "not needed" : "queued"}</td><td className="text-white/45" colSpan={3}>{q}</td></tr>)}
+                      {/* a source stops searching once it has enough candidates. Later queries are only spent if the fetch step runs out of videos */}
+                      {run.plan.queries.filter((q) => !run.searches.some((s) => s.query === q)).map((q) => <tr key={q} className="border-t border-white/5"><td className="py-1 pr-2 font-mono text-white/30">{run.status === "running" && !crashed ? "queued" : "not needed"}</td><td className="text-white/45" colSpan={3}>{q}</td></tr>)}
                     </tbody>
                   </table>
                 </div>
@@ -206,7 +234,7 @@ export default function Agent() {
                       <span className={`w-20 font-mono text-xs ${tone(v)}`}>{v}</span>
                       <span className="font-mono text-xs text-white/80">{c.key}</span>
                       <span className="min-w-0 flex-1 truncate text-white/55">{c.title ?? c.query}</span>
-                      <span className="font-mono text-[11px] text-white/40">{c.licence.name} · {c.author ?? "author unknown"}{c.durationS !== null ? ` · ${Math.round(c.durationS)} s` : ""}{c.verdict ? ` · score ${c.verdict.score}` : ""}</span>
+                      <span className="font-mono text-[11px] text-white/40">{c.licence.name} · {c.author ?? "author unknown"}{c.durationS !== null ? ` · ${Math.round(c.durationS)} s` : ""}{c.verdict ? ` · score ${c.verdict.score}` : ""}{c.reused ? ` · ${c.reused} reused` : ""}</span>
                     </button>
                     {c.verdict && !c.verdict.accepted && <div className="pl-[5.75rem] text-xs text-rose-200/70">{c.verdict.reasons.join("; ")}</div>}
                     {c.verdict?.windowNote && <div className="pl-[5.75rem] text-xs text-amber-200/70">{c.verdict.windowNote}</div>}

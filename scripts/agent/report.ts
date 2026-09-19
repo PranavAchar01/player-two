@@ -1,4 +1,5 @@
 // Step f: the run as something a person can read in a minute. Everything in it comes from run.json.
+import { EMBODIMENTS } from "./feasible";
 import type { Run } from "./types";
 
 // Titles and model text come from the internet. Inside a table cell a pipe or a newline would break the layout.
@@ -14,11 +15,20 @@ export function renderReport(run: Run): string {
   const lines: string[] = [];
   const add = (...l: string[]) => lines.push(...l);
 
-  add(`# Agent run: ${cell(run.task)}`, "", `Run \`${run.id}\`, robot \`${run.options.robot}\`, ${run.options.seconds} s per episode, up to ${run.options.maxVideos} videos from ${run.options.sources.join(", ")}. Status: **${run.status}**${run.error ? ` (${cell(run.error)})` : ""}.`, "");
+  add(`# Agent run: ${cell(run.task)}`, "", `Run \`${run.id}\`, robot \`${run.options.robot}\`, ${run.options.seconds} s per episode, up to ${run.options.maxVideos} judged videos${run.options.targetAccepted ? ` (stopping early at ${run.options.targetAccepted} accepted)` : ""} from ${run.options.sources.join(", ")}. Status: **${run.status}**${run.error ? ` (${cell(run.error)})` : ""}.`, "");
   add(`Started ${run.startedAt}${run.finishedAt ? `, finished ${run.finishedAt}` : ""}.`, "");
   add("These are retargeted kinematic demonstrations. No policy was trained, and video carries no object state or contact forces.", "");
 
-  add("## Result", "", `- candidates found: ${run.candidates.length} (${run.options.sources.map((s) => `${s} ${run.candidates.filter((c) => c.source === s || (s === "youtube-cc" && c.source === "youtube")).length}`).join(", ")})`, `- fetched and judged: ${judged.length}`, `- accepted: ${accepted.length}, rejected: ${rejected.length}`, `- episodes written: ${run.episodes.length}`);
+  // Older runs have no feasibility record. Saying nothing is more honest than printing "ok" for a check that never ran.
+  if (run.feasibility) {
+    const f = run.feasibility;
+    const body = EMBODIMENTS[run.options.robot];
+    add("## Does the task suit the robot", "", `${body.label}: ${body.notes.join(" ")}`, "", f.level === "ok" ? "Feasibility: **ok**. Nothing in the task asks for more than this robot has." : `Feasibility: **${f.level}**.`, "");
+    if (f.reasons.length) add(...f.reasons.map((r) => `- ${cell(r)}`), "");
+    if (f.suggestion) add(cell(f.suggestion), "");
+  }
+
+  add("## Result", "", `- candidates found: ${run.candidates.length} (${run.options.sources.map((s) => `${s} ${run.candidates.filter((c) => c.source === s || (s === "youtube-cc" && c.source === "youtube")).length}`).join(", ")})`, `- fetched and judged: ${judged.length} (${run.candidates.filter((c) => c.reused).length} reused from an earlier run's files, ${run.candidates.filter((c) => c.stage === "failed").length} downloads refused or failed)`, `- accepted: ${accepted.length}, rejected: ${rejected.length}`, `- episodes written: ${run.episodes.length}`);
   if (tally.size) add(`- most common rejection reasons: ${[...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => `${k} (${n})`).join(", ")}`);
   add("");
 
@@ -37,7 +47,8 @@ export function renderReport(run: Run): string {
   add("## Candidates", "", "| candidate | licence | author | length | verdict | score | reasons |", "| --- | --- | --- | ---: | --- | ---: | --- |");
   for (const c of run.candidates) {
     const verdict = c.verdict ? (c.verdict.accepted ? "accepted" : "rejected") : c.stage;
-    const reasons = c.verdict ? (c.verdict.accepted ? `all checks passed${c.verdict.windowNote ? `. ${c.verdict.windowNote}` : ""}` : c.verdict.reasons.join("; ")) : c.note ?? "";
+    const why = c.verdict ? (c.verdict.accepted ? `all checks passed on ${c.verdict.metrics?.armUsed === "both" ? "both arms" : `the ${c.verdict.metrics?.armUsed ?? "judged"} arm`}${c.verdict.windowNote ? `. ${c.verdict.windowNote}` : ""}` : c.verdict.reasons.join("; ")) : c.note ?? "";
+    const reasons = c.reused ? `${why}${why ? ". " : ""}(${c.reused} reused from disk, not downloaded again)` : why;
     add(`| ${link(c.key, c.pageUrl)} | ${cell(c.licence.name)} | ${cell(c.author)} | ${c.durationS === null ? "n/a" : `${Math.round(c.durationS)} s`} | ${verdict} | ${c.verdict ? c.verdict.score : ""} | ${cell(reasons)} |`);
   }
   add("");

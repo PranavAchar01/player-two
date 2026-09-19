@@ -43,8 +43,29 @@ people doing that task.
 
 ```bash
 pnpm dlx tsx scripts/agent/agent.mts "dumbbell lateral raise" --robot g1 --max-videos 6 --seconds 6 --sources pexels,youtube-cc
+# a big run for a demo: judge up to 80 videos, stop as soon as 20 are accepted
+pnpm dlx tsx scripts/agent/agent.mts "raise one arm out to the side" --robot so101 --max-videos 80 --target-accepted 20 --sources youtube-cc
 # or open /agent, type the task and press "Start run". The page shows the run live.
 ```
+
+The task has to make sense for the robot. Before anything is planned or searched, `scripts/agent/feasible.ts`
+checks the task against a small capability model:
+
+| robot | what it is here | refused | warned |
+| --- | --- | --- | --- |
+| `g1` | humanoid: two arms, legs, torso, no fingers in this pipeline | nothing | finger work (type, play piano, thread a needle) |
+| `so101`, `panda` | ONE fixed-base arm with a gripper: no second arm, no legs, no torso | anything that needs two hands or a body: both hands, clap, jumping jack, squat, lunge, walk, run, dance, jump, burpee, push up, pull up, kick, fold a shirt, tie, open a jar, barbell | grasp-dependent tasks (pick up, grab, pour, stack, place, hand over) and finger work |
+
+A refused task prints the reasons and a suggestion (choose `--robot g1`, or ask for a one-arm version such as
+"raise one arm out to the side"), exits with code 2 and searches nothing. `POST /api/runs` answers 422 with the
+same reasons, and the /agent page shows them while you type. A warning lets the run continue and is recorded in
+`run.json` as `feasibility` and printed in `REPORT.md`. The honest reason for the grasp warning: the pose model
+cannot tell an open hand from a fist, so gripper closing cannot be learned from video yet. Only the path of the
+arm is. These are keyword rules, so they catch the obvious mismatches, not every one.
+
+For an arm robot the planner is told the robot is ONE arm, and the plan's `arm` is `left`, `right` or `either`,
+never `both`. Videos of people moving both arms are fine: with `either` the judge checks each arm against the
+per-arm bars and takes the better one, and that same arm is the one handed to the retargeter.
 
 Steps, each written to `data/runs/<runId>/run.json` as it happens (`REPORT.md` beside it is the readable version):
 
@@ -52,8 +73,13 @@ Steps, each written to `data/runs/<runId>/run.json` as it happens (`REPORT.md` b
    fills in a fixed form: 4 to 6 search queries, which arm matters, and one machine-checkable motion signature
    (`arm_elevation`, `elbow_flexion` or `wrist_oscillation` with a threshold and a count). The answer is
    treated as untrusted and validated. With no key, or on any failure, deterministic queries are used.
-2. Search, one request at a time, at least 1.5 s apart, never more than 25 videos per run.
+2. Search, one request at a time, at least 1.5 s apart. YouTube is read up to 30 results deep per query, and
+   only as many queries are spent as the run needs: the first round is sized to the budget (or to four
+   candidates per accepted clip wanted), and the remaining queries are used only if the fetch step runs dry.
+   The same video is never emitted twice in a run.
 3. Fetch to `data/sources/` (gitignored) and extract pose with the pinned `scripts/extract_pose.py` command.
+   If an earlier run already left `data/sources/<key>.mp4` or `data/tracks/<key>.json`, it is reused and
+   nothing is downloaded or extracted again.
 4. Judge the footage from the track numbers only: tracked frames, arm visibility, person size, limbs in frame,
    frontal view, facing the camera, arm motion, one continuous person (no cuts, including front-to-back cuts),
    whether the planned motion occurs, and its direction (a front raise is not a lateral raise). If the busiest
@@ -62,6 +88,13 @@ Steps, each written to `data/runs/<runId>/run.json` as it happens (`REPORT.md` b
 5. Retarget accepted clips with `scripts/retarget.mts` (for the G1, `scripts/mirror.mts` is the fallback).
 6. Rank the episodes and write the run. Each episode carries its source URL, licence, author and query, both
    in the run and inside the demo file.
+
+Run size. `--max-videos` counts JUDGED videos. From the web page it is capped at 25 (`MAX_VIDEOS_CAP`), because
+anyone who can open the page can start a run. From the command line it goes to 80 (`CLI_MAX_VIDEOS_CAP`): about
+half of judged clips are accepted, so 20 accepted clips takes 40 or more judged. Download attempts are capped
+at twice the budget, because YouTube refuses about 40 percent of media downloads (HTTP 403); a refused clip is
+counted and dropped, never retried or worked around. `--target-accepted N` stops the run early once N clips are
+accepted. Pacing, licence checks and the first-60-seconds rule are the same at every size.
 
 Licence policy: only footage that may be reused is kept. `pexels` is the Pexels licence. `youtube-cc` searches
 with YouTube's Creative Commons filter and then keeps only videos whose own metadata says Creative Commons,

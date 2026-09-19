@@ -1,7 +1,9 @@
 // The agent: a task in plain words in, a traceable set of retargeted robot demonstrations out.
 //   plan (LLM, validated) -> search (paced, licence-checked) -> fetch + pose -> judge footage -> retarget -> write run
-// usage: tsx scripts/agent/agent.mts "<task>" [--robot g1|so101|panda] [--max-videos N] [--seconds S]
-//          [--sources pexels,youtube-cc] [--allow-standard-license]
+//   before any of it: does the task suit the robot (feasible.ts)? A refusal exits with code 2 and asks nobody for anything.
+// usage: tsx scripts/agent/agent.mts "<task>" [--robot g1|so101|panda] [--max-videos N] [--target-accepted N]
+//          [--seconds S] [--sources pexels,youtube-cc] [--allow-standard-license]
+// --max-videos counts JUDGED videos (up to CLI_MAX_VIDEOS_CAP here, MAX_VIDEOS_CAP from the web page).
 // run.json is rewritten after every change so the /agent page can show the run while it happens.
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -9,13 +11,15 @@ import { writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { MEDIAPIPE_PIN, extractPose, fetchVideo, probeDuration } from "./fetch";
+import { limitsFor, searchWant, stopReason } from "./budget";
+import { EMBODIMENTS, checkFeasibility } from "./feasible";
+import { MEDIAPIPE_PIN, extractPose, fetchVideo, probeDuration, reusable } from "./fetch";
 import { judgeBestWindow, parseTrack } from "./judge";
 import { planTask } from "./plan";
 import { renderReport } from "./report";
 import { retargetClip } from "./retarget";
 import { Pacer, searchPexels, searchYoutube } from "./search";
-import { MAX_VIDEOS_CAP, RUN_ID, type Candidate, type Episode, type Run, type StepName } from "./types";
+import { CLI_MAX_VIDEOS_CAP, RUN_ID, type Candidate, type Episode, type Run, type StepName } from "./types";
 import { parseArgv, validateRunRequest } from "./validate";
 
 const run$ = promisify(execFile);
@@ -24,10 +28,20 @@ process.chdir(path.resolve(import.meta.dirname, "../.."));
 
 const argv = parseArgv(process.argv.slice(2));
 if ("error" in argv) { console.error(argv.error); process.exit(2); }
-const checked = validateRunRequest(argv.request);
+const checked = validateRunRequest(argv.request, CLI_MAX_VIDEOS_CAP);
 if (!checked.ok) { console.error(checked.error); process.exit(2); }
 if (argv.runId !== null && !RUN_ID.test(argv.runId)) { console.error("bad --run-id"); process.exit(2); }
 const { task, ...options } = checked.value;
+
+// Before a run directory exists and before anything is searched: a task the robot cannot do is not a failed run,
+// it is a request to rephrase, so it leaves nothing behind and exits like any other bad argument.
+const feasibility = checkFeasibility(task, options.robot);
+if (feasibility.level === "refuse") {
+  console.error(`Not started: "${task}" does not suit the ${EMBODIMENTS[options.robot].label}.`);
+  for (const r of feasibility.reasons) console.error(`  - ${r}`);
+  if (feasibility.suggestion) console.error(feasibility.suggestion);
+  process.exit(2);
+}
 
 const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 const slug = task.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "task";
@@ -36,7 +50,7 @@ const dir = `data/runs/${id}`;
 const STEPS: StepName[] = ["plan", "search", "fetch", "judge", "retarget", "write"];
 
 const run: Run = {
-  schema: 1, id, task, options, status: "running", pid: process.pid, startedAt: new Date().toISOString(), finishedAt: null, error: null,
+  schema: 1, id, task, options, status: "running", pid: process.pid, startedAt: new Date().toISOString(), finishedAt: null, error: null, feasibility,
   steps: STEPS.map((name) => ({ name, status: "pending", startedAt: null, ms: null, summary: null })),
   plan: null, searches: [], candidates: [], episodes: [], retargetFailures: [], versions: {},
 };
@@ -65,63 +79,111 @@ run.versions = {
   mediapipe: `${MEDIAPIPE_PIN} (pinned)`, poseModel: "pose_landmarker_lite.task", extractor: "scripts/extract_pose.py",
 };
 await save();
-log(`run ${id}: "${task}" -> ${options.robot}, up to ${options.maxVideos} videos, ${options.seconds} s each`);
+log(`run ${id}: "${task}" -> ${options.robot}, up to ${options.maxVideos} judged videos${options.targetAccepted ? `, stopping at ${options.targetAccepted} accepted` : ""}, ${options.seconds} s each`);
+if (feasibility.level === "warn") for (const r of feasibility.reasons) log(`feasibility warning: ${r}`);
 
 try {
   // ---- a. plan
   let t0 = performance.now();
   await begin("plan");
-  run.plan = await planTask(task, options.seconds, log);
+  run.plan = await planTask(task, options.seconds, options.robot, log);
   run.versions.planner = run.plan.model ?? "deterministic fallback";
   await end("plan", performance.now() - t0, `${run.plan.planner}${run.plan.model ? ` (${run.plan.model})` : ""}: ${run.plan.queries.length} queries, ${run.plan.arm} arm, ${run.plan.signature.kind} ${run.plan.signature.threshold} x${run.plan.signature.minCount} ${run.plan.signature.direction ?? ""}${run.plan.note ? `. ${run.plan.note}` : ""}`);
 
   // ---- b. search
   t0 = performance.now();
   await begin("search");
+  const plan = run.plan;
   const pacer = new Pacer();
   const seen = new Set<string>();
-  const budget = Math.min(options.maxVideos, MAX_VIDEOS_CAP);
-  // A few spares per source, because some downloads get refused. Attempts stay under the hard cap either way.
-  const maxAttempts = Math.min(MAX_VIDEOS_CAP, budget + Math.ceil(budget / 2));
+  const limits = limitsFor(options);
+  const counts = { judged: 0, attempts: 0, accepted: 0 };
+  const usable = (list: Candidate[]) => list.filter((c) => c.stage === "found");
+  const fromSource = (s: string) => (c: Candidate) => c.source === s || (s === "youtube-cc" && c.source === "youtube");
+
+  // YouTube is searched as deep as the run turns out to need. Each hit costs a metadata request, so the first round
+  // is sized by searchWant and the remaining queries are only spent if the fetch loop below runs dry.
+  // One query per call, so run.json (and the page reading it) fills in query by query during a long search.
+  let nextYoutubeQuery = 0;
+  async function searchYoutubeMore(want: number): Promise<Candidate[]> {
+    const got: Candidate[] = [];
+    while (got.length < want && nextYoutubeQuery < plan.queries.length) {
+      const found = await searchYoutube([plan.queries[nextYoutubeQuery++]], want - got.length, options.allowStandardLicense, pacer, seen, log);
+      run.searches.push(...found.searches);
+      run.candidates.push(...found.candidates);
+      got.push(...usable(found.candidates));
+      await save();
+    }
+    return got;
+  }
+
+  const firstWant = searchWant(counts, limits);
   for (const source of options.sources) {
-    const found = source === "pexels" ? await searchPexels(run.plan.queries, maxAttempts, pacer, seen, log) : await searchYoutube(run.plan.queries, maxAttempts, options.allowStandardLicense, pacer, seen, log);
+    if (source === "youtube-cc") { await searchYoutubeMore(firstWant); continue; }
+    const found = await searchPexels(plan.queries, firstWant, pacer, seen, log);
     run.searches.push(...found.searches);
     run.candidates.push(...found.candidates);
     await save();
   }
   // Take turns between sources so one prolific source cannot use the whole budget.
-  const pools = options.sources.map((s) => run.candidates.filter((c) => c.stage === "found" && (c.source === s || (s === "youtube-cc" && c.source === "youtube"))));
+  const pools = options.sources.map((s) => usable(run.candidates).filter(fromSource(s)));
   const queue: Candidate[] = [];
   for (let i = 0; pools.some((p) => p.length > i); i++) for (const p of pools) if (p[i]) queue.push(p[i]);
-  await end("search", performance.now() - t0, `${run.candidates.length} candidates (${options.sources.map((s, i) => `${s} ${pools[i].length} usable`).join(", ")}). Fetching until ${budget} are judged, at most ${maxAttempts} attempts`);
+  await end("search", performance.now() - t0, `${run.candidates.length} candidates (${options.sources.map((s, i) => `${s} ${pools[i].length} usable`).join(", ")}). Fetching until ${limits.budget} are judged${limits.targetAccepted !== null ? ` or ${limits.targetAccepted} are accepted` : ""}, at most ${limits.maxAttempts} download attempts`);
 
   // ---- c + d. fetch, extract pose, judge. Judged one by one so the page fills in as the run goes.
   t0 = performance.now();
   await begin("fetch");
-  let judgeMs = 0;
-  let attempts = 0;
-  for (const c of queue) {
-    if (run.candidates.filter((x) => x.verdict).length >= budget || attempts >= maxAttempts) break;
-    attempts++;
+  let judgeMs = 0, reusedCount = 0, topUps = 0;
+  const emitted = new Set<string>();
+  let stopped: string | null = null;
+  for (let i = 0; ; i++) {
+    if ((stopped = stopReason(counts, limits))) break;
+    if (i >= queue.length) {
+      // The queue ran dry with budget left: spend the planned queries that have not been used yet.
+      if (!options.sources.includes("youtube-cc") || nextYoutubeQuery >= plan.queries.length) { stopped = "every candidate the searches found was used"; break; }
+      topUps++;
+      log(`search: queue is empty with budget left, searching query ${nextYoutubeQuery + 1} of ${plan.queries.length}`);
+      queue.push(...(await searchYoutubeMore(Math.max(1, searchWant(counts, limits)))));
+      i--;
+      continue;
+    }
+    const c = queue[i];
+    // The searches share one `seen` set, so this should never fire. It is the guarantee, not the mechanism:
+    // whatever a source hands back, one video is fetched, judged and retargeted at most once per run.
+    if (emitted.has(c.key)) { c.stage = "skipped"; c.note = "same video as an earlier candidate in this run"; continue; }
+    emitted.add(c.key);
     try {
-      c.stage = "fetching"; await save();
-      c.file = await fetchVideo(c, pacer);
-      c.durationS ??= await probeDuration(c.file);
+      const onDisk = await reusable(c.key);
+      if (onDisk.track) {
+        c.reused = "track"; c.file = onDisk.file; reusedCount++;
+        log(`fetch: ${c.key} pose track already on disk, reused`);
+      } else if (onDisk.file) {
+        c.reused = "footage"; c.file = onDisk.file; reusedCount++;
+        log(`fetch: ${c.key} footage already on disk, reused`);
+      } else {
+        counts.attempts++;
+        c.stage = "fetching"; await save();
+        c.file = await fetchVideo(c, pacer);
+        log(`fetch: ${c.key} downloaded`);
+      }
+      if (c.file) c.durationS ??= await probeDuration(c.file);
       c.stage = "extracting"; await save();
-      log(`fetch: ${c.key} downloaded, extracting pose`);
-      c.track = await extractPose(c.file, c.key);
+      c.track = onDisk.track ?? (await extractPose(c.file!, c.key));
       if (!c.licence.redistributable) {
         // --allow-standard-license: the numbers are kept, the footage is not.
-        await rm(c.file, { force: true });
+        await rm(`data/sources/${c.key}.mp4`, { force: true });
         c.file = null; c.footageDeleted = true;
       }
       if (step("judge").status === "pending") await begin("judge");
       const tj = performance.now();
       const track = parseTrack(JSON.parse(await readFile(c.track, "utf8")));
-      c.verdict = track ? judgeBestWindow(track, run.plan, options.seconds) : { pinnedStartS: null, windowNote: null, accepted: false, score: 0, reasons: ["track file is not in the expected shape"], checks: [], metrics: null };
+      c.verdict = track ? judgeBestWindow(track, plan, options.seconds) : { pinnedStartS: null, windowNote: null, accepted: false, score: 0, reasons: ["track file is not in the expected shape"], checks: [], metrics: null };
       judgeMs += performance.now() - tj;
       c.stage = "judged";
-      log(`judge: ${c.key} ${c.verdict.accepted ? "ACCEPTED" : "rejected"} score ${c.verdict.score}${c.verdict.accepted ? "" : ` (${c.verdict.reasons.map((r) => r.split(":")[0]).join(", ")})`}`);
+      counts.judged++;
+      if (c.verdict.accepted) counts.accepted++;
+      log(`judge: ${c.key} ${c.verdict.accepted ? "ACCEPTED" : "rejected"} score ${c.verdict.score}${c.verdict.accepted ? "" : ` (${c.verdict.reasons.map((r) => r.split(":")[0]).join(", ")})`} [${counts.accepted} accepted of ${counts.judged} judged]`);
     } catch (err) {
       c.stage = "failed"; c.note = short(err);
       // the keep-no-footage promise holds on the failure path too
@@ -130,10 +192,12 @@ try {
     }
     await save();
   }
-  for (const c of run.candidates) if (c.stage === "found") { c.stage = "skipped"; c.note = `not needed: the budget of ${budget} judged videos (or ${maxAttempts} attempts) was reached first`; }
+  for (const c of run.candidates) if (c.stage === "found") { c.stage = "skipped"; c.note = `not needed: ${stopped}`; }
   const judged = run.candidates.filter((c) => c.verdict);
   const accepted = judged.filter((c) => c.verdict!.accepted).sort((a, b) => b.verdict!.score - a.verdict!.score);
-  await end("fetch", performance.now() - t0 - judgeMs, `${judged.length} of ${attempts} attempted videos fetched and tracked, ${attempts - judged.length} failed`);
+  const failedCount = run.candidates.filter((c) => c.stage === "failed").length;
+  await end("fetch", performance.now() - t0 - judgeMs, `${judged.length} videos tracked: ${counts.attempts} download attempts (${failedCount} refused or failed), ${reusedCount} reused from disk${topUps ? `, ${topUps} extra search${topUps === 1 ? "" : "es"}` : ""}. Stopped because ${stopped}`);
+  if (step("judge").status === "pending") await begin("judge");
   await end("judge", judgeMs, `${accepted.length} accepted, ${judged.length - accepted.length} rejected`);
 
   // ---- e. retarget
@@ -145,7 +209,8 @@ try {
       // Always hand over the exact window the judge evaluated. "auto" lets each retargeter pick its own most active
       // window, and the arm and humanoid retargeters do not pick the same one, so an unjudged stretch could slip in.
       const judgedStart = c.verdict!.pinnedStartS ?? c.verdict!.metrics?.windowStartS ?? null;
-      const r = await retargetClip(c, options.robot, options.seconds, id, poseOnly, judgedStart);
+      const judgedArm = c.verdict!.metrics?.armUsed;
+      const r = await retargetClip(c, options.robot, options.seconds, id, poseOnly, judgedStart, judgedArm === "left" || judgedArm === "right" ? judgedArm : null);
       // Footage quality says how far the input can be trusted, retarget stats say how much of it the robot could follow.
       const followed = typeof r.stats.tracked === "number" ? (r.stats.tracked / 100) * (1 - (r.stats.limited ?? 0) / 100) : c.verdict!.score;
       const episode: Episode = {

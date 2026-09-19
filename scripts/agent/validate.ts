@@ -13,7 +13,11 @@ export type Validation = { ok: true; value: RunRequest } | { ok: false; error: s
 
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 
-export function validateRunRequest(body: unknown): Validation {
+/**
+ * `maxVideosCap` is the one rule that differs between the two doors: the web API keeps MAX_VIDEOS_CAP, the CLI
+ * passes CLI_MAX_VIDEOS_CAP. Everything else is identical on purpose.
+ */
+export function validateRunRequest(body: unknown, maxVideosCap: number = MAX_VIDEOS_CAP): Validation {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, error: "body must be a JSON object" };
   const b = body as Record<string, unknown>;
 
@@ -25,7 +29,7 @@ export function validateRunRequest(body: unknown): Validation {
   if (typeof robot !== "string" || !(ROBOTS as readonly string[]).includes(robot)) return { ok: false, error: `robot must be one of ${ROBOTS.join(", ")}` };
 
   const maxVideos = b.maxVideos === undefined ? 6 : b.maxVideos;
-  if (!isInt(maxVideos) || maxVideos < 1 || maxVideos > MAX_VIDEOS_CAP) return { ok: false, error: `maxVideos must be a whole number from 1 to ${MAX_VIDEOS_CAP}` };
+  if (!isInt(maxVideos) || maxVideos < 1 || maxVideos > maxVideosCap) return { ok: false, error: `maxVideos must be a whole number from 1 to ${maxVideosCap}` };
 
   const seconds = b.seconds === undefined ? 6 : b.seconds;
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 2 || seconds > 20) return { ok: false, error: "seconds must be a number from 2 to 20" };
@@ -36,7 +40,11 @@ export function validateRunRequest(body: unknown): Validation {
   const allow = b.allowStandardLicense === undefined ? false : b.allowStandardLicense;
   if (typeof allow !== "boolean") return { ok: false, error: "allowStandardLicense must be true or false" };
 
-  return { ok: true, value: { task, robot: robot as Robot, maxVideos, seconds, sources: [...new Set(sources as SourceName[])], allowStandardLicense: allow } };
+  // Accepted clips are a subset of judged clips, so a target above the judged budget could never be met.
+  const target = b.targetAccepted;
+  if (target !== undefined && (!isInt(target) || target < 1 || target > maxVideos)) return { ok: false, error: `targetAccepted must be a whole number from 1 to maxVideos (${maxVideos})` };
+
+  return { ok: true, value: { task, robot: robot as Robot, maxVideos, seconds, sources: [...new Set(sources as SourceName[])], allowStandardLicense: allow, ...(target === undefined ? {} : { targetAccepted: target }) } };
 }
 
 /** Parses the CLI argv into the same object the API accepts, so both paths share every rule above. */
@@ -49,6 +57,7 @@ export function parseArgv(argv: string[]): { request: unknown; runId: string | n
     const next = () => argv[++i];
     if (a === "--robot") body.robot = next();
     else if (a === "--max-videos") body.maxVideos = Number(next());
+    else if (a === "--target-accepted") body.targetAccepted = Number(next());
     else if (a === "--seconds") body.seconds = Number(next());
     else if (a === "--sources") body.sources = (next() ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     else if (a === "--allow-standard-license") body.allowStandardLicense = true;
@@ -56,7 +65,7 @@ export function parseArgv(argv: string[]): { request: unknown; runId: string | n
     else if (a.startsWith("--")) return { error: `unknown flag ${a}` };
     else positional.push(a);
   }
-  if (positional.length !== 1) return { error: 'usage: agent.mts "<task>" [--robot g1|so101|panda] [--max-videos N] [--seconds S] [--sources pexels,youtube-cc] [--allow-standard-license]' };
+  if (positional.length !== 1) return { error: 'usage: agent.mts "<task>" [--robot g1|so101|panda] [--max-videos N] [--target-accepted N] [--seconds S] [--sources pexels,youtube-cc] [--allow-standard-license]' };
   body.task = positional[0];
   return { request: body, runId };
 }

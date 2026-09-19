@@ -4,7 +4,8 @@
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DIRECTIONS, SIGNATURE_KINDS, type Arm, type Direction, type MotionSignature, type Plan, type SignatureKind } from "./types";
+import { armForRobot, embodimentBrief, isSingleArm } from "./feasible";
+import { DIRECTIONS, SIGNATURE_KINDS, type Arm, type Direction, type MotionSignature, type Plan, type Robot, type SignatureKind } from "./types";
 
 const MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -45,8 +46,11 @@ export function fallbackPlan(task: string, note: string | null): Plan {
   };
 }
 
-/** Accepts only what fits the form. Returns null when too little survives to be worth using. */
-export function validatePlan(raw: unknown, task: string, model: string, seconds: number): Plan | null {
+/**
+ * Accepts only what fits the form. Returns null when too little survives to be worth using.
+ * The robot matters for one field: a single arm never gets arm "both", whatever the model answered.
+ */
+export function validatePlan(raw: unknown, task: string, model: string, seconds: number, robot: Robot = "g1"): Plan | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   const base = fallbackPlan(task, null);
@@ -84,35 +88,39 @@ export function validatePlan(raw: unknown, task: string, model: string, seconds:
   return {
     planner: "gemini", model, note: null,
     queries: queries.slice(0, 6),
-    arm: ARMS.includes(r.arm as Arm) ? (r.arm as Arm) : "either",
+    arm: armForRobot(ARMS.includes(r.arm as Arm) ? (r.arm as Arm) : "either", robot),
     motionDescription: cleanText(r.motionDescription, 240) || base.motionDescription,
     signature,
     rejectionCriteria: criteria.length ? criteria : base.rejectionCriteria,
   };
 }
 
-const SCHEMA = {
+/** For a single arm "both" is not even offered to the model. validatePlan still checks, because a schema is a request, not a guarantee. */
+export const planSchema = (robot: Robot) => ({
   type: "OBJECT",
   properties: {
     queries: { type: "ARRAY", minItems: 4, maxItems: 6, items: { type: "STRING" } },
-    arm: { type: "STRING", enum: ARMS },
+    arm: { type: "STRING", enum: ARMS.filter((a) => !(isSingleArm(robot) && a === "both")) },
     motionDescription: { type: "STRING" },
     signature: { type: "OBJECT", properties: { kind: { type: "STRING", enum: [...SIGNATURE_KINDS] }, threshold: { type: "NUMBER" }, minCount: { type: "INTEGER" }, direction: { type: "STRING", enum: [...DIRECTIONS] } }, required: ["kind", "threshold", "minCount", "direction"] },
     rejectionCriteria: { type: "ARRAY", maxItems: 8, items: { type: "STRING" } },
   },
   required: ["queries", "arm", "motionDescription", "signature", "rejectionCriteria"],
-};
+});
+
+/** What the model is told about this run. Exported so a test can hold the single-arm wording in place. */
+export const planRequestText = (task: string, seconds: number, robot: Robot) => `Task: ${task}\nRobot: ${embodimentBrief(robot)}\nThe machine check runs on one ${seconds} second window of the clip, so minCount must fit in ${seconds} seconds of slow, clean motion.`;
 
 const SYSTEM = `You plan video searches for a tool that copies human arm motion onto a robot from ONE ordinary camera.
 Footage only works when there is exactly one person, seen from the front, upper body or full body in shot, arms never leaving the frame, plain steady motion, steady camera, no cuts.
 Return JSON only.
 - queries: 4 to 6 short stock-video or YouTube search queries (plain words, no quotes, no operators) tuned to find such footage of the task. Vary the wording. Prefer words like "front view", "demonstration", "full body", "one person".
-- arm: which of the PERSON'S arms matters: left, right, both, or either.
+- arm: which of the PERSON'S arms matters: left, right, both, or either. The user message says what the robot is. When it is ONE arm, never answer "both": answer "either" unless the task names a side.
 - motionDescription: one sentence saying what the motion must look like in measurable terms.
 - signature: pick ONE machine check. kind "arm_elevation" = upper arm lifts away from the torso past threshold DEGREES (0 is hanging down, 90 is horizontal); kind "elbow_flexion" = elbow angle swings through threshold DEGREES, minCount counts swings (one bend and straighten is 2); kind "wrist_oscillation" = wrist goes back and forth with threshold CENTIMETRES per swing, minCount counts swings. Be lenient: set the threshold about 25 percent below the ideal motion. direction (used for arm_elevation only): "sideways" when the arm goes out to the side in the camera plane (lateral raise, jumping jack), "forward" ONLY when the task itself says front, forward, toward or reaching (front raise, reaching forward, punch); an overhead or shoulder press, a wave, and anything else moves in the camera plane or is unclear, so use "any". When unsure use "any": a wrong direction rejects good footage. Keep minCount at 1 unless the task is rhythmic (jumping jacks, waving), because clips are only a few seconds long.
 - rejectionCriteria: up to 8 short reasons footage of this task would be unusable.`;
 
-export async function planTask(task: string, seconds: number, log: (line: string) => void): Promise<Plan> {
+export async function planTask(task: string, seconds: number, robot: Robot, log: (line: string) => void): Promise<Plan> {
   const key = await readGeminiKey();
   if (!key) return fallbackPlan(task, "no GEMINI_API_KEY in the environment or ~/.zshrc");
   const notes: string[] = [];
@@ -121,7 +129,7 @@ export async function planTask(task: string, seconds: number, log: (line: string
       const res = await fetch(`${ENDPOINT}/${model}:generateContent`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ role: "user", parts: [{ text: `Task: ${task}\nThe machine check runs on one ${seconds} second window of the clip, so minCount must fit in ${seconds} seconds of slow, clean motion.` }] }], generationConfig: { temperature: 0.2, responseMimeType: "application/json", responseSchema: SCHEMA } }),
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ role: "user", parts: [{ text: planRequestText(task, seconds, robot) }] }], generationConfig: { temperature: 0.2, responseMimeType: "application/json", responseSchema: planSchema(robot) } }),
         signal: AbortSignal.timeout(45_000),
       });
       if (!res.ok) {
@@ -133,7 +141,7 @@ export async function planTask(task: string, seconds: number, log: (line: string
       }
       const body = (await res.json()) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
       const text = (body.candidates?.[0]?.content?.parts ?? []).filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("");
-      const plan = validatePlan(JSON.parse(text), task, model, seconds);
+      const plan = validatePlan(JSON.parse(text), task, model, seconds, robot);
       if (plan) return { ...plan, note: notes.length ? notes.join("; ") : null };
       notes.push(`${model}: answer did not fit the plan form`);
     } catch (err) {

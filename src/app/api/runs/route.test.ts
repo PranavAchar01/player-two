@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CLI_MAX_VIDEOS_CAP } from "../../../../scripts/agent/types";
 import { parseArgv, validateRunRequest } from "../../../../scripts/agent/validate";
 
 // If validation ever let a bad body through, the route would try to start a process. Make that loud, not real.
@@ -34,6 +35,20 @@ describe("validateRunRequest", () => {
     for (const maxVideos of [0, 26, -1, 2.5, "6", NaN, Infinity, null]) expect(validateRunRequest({ task: "wave hello", maxVideos }).ok).toBe(false);
   });
 
+  it("lets the command line ask for up to 80, and only when it says so", () => {
+    expect(validateRunRequest({ task: "wave hello", maxVideos: 80 }, CLI_MAX_VIDEOS_CAP).ok).toBe(true);
+    expect(validateRunRequest({ task: "wave hello", maxVideos: 81 }, CLI_MAX_VIDEOS_CAP).ok).toBe(false);
+    expect(validateRunRequest({ task: "wave hello", maxVideos: 80 }).ok).toBe(false);
+  });
+
+  it("takes an accepted-clips target no larger than the judged budget", () => {
+    expect(validateRunRequest({ task: "wave hello", maxVideos: 80, targetAccepted: 20 }, CLI_MAX_VIDEOS_CAP)).toMatchObject({ ok: true, value: { maxVideos: 80, targetAccepted: 20 } });
+    expect(validateRunRequest({ task: "wave hello", maxVideos: 6, targetAccepted: 6 })).toMatchObject({ ok: true, value: { targetAccepted: 6 } });
+    for (const targetAccepted of [0, 7, -1, 2.5, "3", NaN, null]) expect(validateRunRequest({ task: "wave hello", maxVideos: 6, targetAccepted }).ok).toBe(false);
+    const v = validateRunRequest({ task: "wave hello" });
+    expect(v.ok && "targetAccepted" in v.value).toBe(false);
+  });
+
   it("checks seconds, sources and the licence flag", () => {
     for (const seconds of [1, 21, "6", NaN]) expect(validateRunRequest({ task: "wave hello", seconds }).ok).toBe(false);
     for (const sources of [[], ["vimeo"], "pexels", ["pexels", 3]]) expect(validateRunRequest({ task: "wave hello", sources }).ok).toBe(false);
@@ -52,6 +67,12 @@ describe("parseArgv", () => {
     expect(a).toEqual({ request: { task: "dumbbell lateral raise", robot: "g1", maxVideos: 6, seconds: 6, sources: ["pexels", "youtube-cc"] }, runId: null });
     expect("request" in a && validateRunRequest(a.request).ok).toBe(true);
   });
+  it("reads --target-accepted", () => {
+    const a = parseArgv(["wave hello", "--max-videos", "80", "--target-accepted", "20"]);
+    expect(a).toEqual({ request: { task: "wave hello", maxVideos: 80, targetAccepted: 20 }, runId: null });
+    expect("request" in a && validateRunRequest(a.request, CLI_MAX_VIDEOS_CAP).ok).toBe(true);
+    expect("request" in a && validateRunRequest(a.request).ok).toBe(false); // the web door would not take 80
+  });
   it("keeps the standard-licence switch off unless asked, and refuses unknown flags", () => {
     const off = parseArgv(["wave hello"]);
     expect("request" in off && validateRunRequest(off.request)).toMatchObject({ ok: true, value: { allowStandardLicense: false } });
@@ -68,6 +89,24 @@ describe("POST /api/runs", () => {
       expect(res.status).toBe(400);
       expect(typeof ((await res.json()) as { error: string }).error).toBe("string");
     }
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("answers 422 with the reasons when the robot cannot do the task, and starts nothing", async () => {
+    for (const [task, robot] of [["do jumping jacks", "so101"], ["clap both hands", "panda"], ["fold a shirt", "so101"]]) {
+      const res = await post({ task, robot });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string; reasons: string[]; suggestion: string | null };
+      expect(body.error).toMatch(new RegExp(robot));
+      expect(body.reasons.length).toBeGreaterThanOrEqual(2);
+      expect(body.reasons.join(" ")).toMatch(/one fixed-base arm/);
+      expect(body.suggestion).toMatch(/g1/);
+    }
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the web cap at 25 even though the command line goes higher", async () => {
+    expect((await post({ task: "wave hello", maxVideos: 80 })).status).toBe(400);
     expect(spawn).not.toHaveBeenCalled();
   });
 

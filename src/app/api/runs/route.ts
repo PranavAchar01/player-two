@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { checkFeasibility } from "../../../../scripts/agent/feasible";
 import { validateRunRequest } from "../../../../scripts/agent/validate";
 import { RUNS_DIR, listRuns } from "./runs";
 
@@ -19,9 +20,13 @@ export async function GET() {
 export async function POST(req: Request) {
   const checked = validateRunRequest(await req.json().catch(() => null));
   if (!checked.ok) return Response.json({ error: checked.error }, { status: 400 });
-  const { task, robot, maxVideos, seconds, sources, allowStandardLicense } = checked.value;
+  const { task, robot, maxVideos, seconds, sources, allowStandardLicense, targetAccepted } = checked.value;
   // The page has no switch for this on purpose. Keeping footage out of the licence policy takes a deliberate CLI flag.
   if (allowStandardLicense) return Response.json({ error: "allowStandardLicense can only be set from the command line" }, { status: 400 });
+  // The body is well formed, but this robot cannot do this task (a single arm asked for jumping jacks). 422, not
+  // 400, so the page can tell "fix your input" from "pick another robot or rephrase", and nothing is spawned.
+  const feasibility = checkFeasibility(task, robot);
+  if (feasibility.level === "refuse") return Response.json({ error: `this task does not suit the ${robot}`, reasons: feasibility.reasons, suggestion: feasibility.suggestion ?? null }, { status: 422 });
   if (Date.now() - lastSpawn < 20_000 || (await listRuns()).some((r) => r.status === "running")) return Response.json({ error: "a run is already in progress" }, { status: 409 });
   lastSpawn = Date.now();
 
@@ -33,7 +38,7 @@ export async function POST(req: Request) {
   // No shell: the task travels as one argv entry. It was checked to start with a letter or digit, so it cannot
   // be read as a flag either.
   const logFd = openSync(path.join(RUNS_DIR, id, "agent.log"), "a");
-  const child = spawn("pnpm", ["dlx", "tsx", "scripts/agent/agent.mts", task, "--robot", robot, "--max-videos", String(maxVideos), "--seconds", String(seconds), "--sources", sources.join(","), "--run-id", id], { cwd: process.cwd(), detached: true, shell: false, stdio: ["ignore", logFd, logFd] });
+  const child = spawn("pnpm", ["dlx", "tsx", "scripts/agent/agent.mts", task, "--robot", robot, "--max-videos", String(maxVideos), "--seconds", String(seconds), "--sources", sources.join(","), ...(targetAccepted === undefined ? [] : ["--target-accepted", String(targetAccepted)]), "--run-id", id], { cwd: process.cwd(), detached: true, shell: false, stdio: ["ignore", logFd, logFd] });
   child.on("error", () => { lastSpawn = 0; });
   child.unref();
   closeSync(logFd);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validatePlan } from "./plan";
-import { isCreativeCommons, keepYoutubeEntry, youtubeLicence } from "./search";
+import { MAX_YOUTUBE_SECONDS, Pacer, freshYoutubeIds, isCreativeCommons, keepYoutubeEntry, youtubeLicence } from "./search";
+import { REQUEST_GAP_MS, YT_RESULTS_PER_QUERY } from "./types";
 
 const CC = "Creative Commons Attribution license (reuse allowed)";
 const ok = { id: "WWhSHS2DrKQ", license: CC, duration: 30 };
@@ -37,6 +38,32 @@ describe("licence filter", () => {
     expect(keepYoutubeEntry({ ...ok, duration: undefined }, true).keep).toBe(false);
     expect(keepYoutubeEntry({ ...ok, id: "--exec=rm" }, true).keep).toBe(false);
     expect(keepYoutubeEntry({ ...ok, id: "../../etc/passwd" }, true).keep).toBe(false);
+  });
+});
+
+describe("deeper search, still polite", () => {
+  it("reads up to 30 results per query and keeps the pace at 1.5 s or slower", () => {
+    expect(YT_RESULTS_PER_QUERY).toBe(30);
+    expect(REQUEST_GAP_MS).toBeGreaterThanOrEqual(1500);
+    expect(MAX_YOUTUBE_SECONDS).toBe(240);
+  });
+
+  it("spaces two requests by the gap", async () => {
+    const pacer = new Pacer();
+    const t0 = Date.now();
+    await pacer.wait();
+    await pacer.wait();
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(REQUEST_GAP_MS - 20);
+  });
+
+  it("never offers the same video twice: not within a page, not across queries of a run", () => {
+    const seen = new Set<string>(["yt:aaaaaaaaaaa"]);
+    const page = [{ id: "aaaaaaaaaaa", duration: 30 }, { id: "bbbbbbbbbbb", duration: 30 }, { id: "bbbbbbbbbbb", duration: 30 }, { id: "ccccccccccc" }, { id: "ddddddddddd", duration: 900 }, { id: "--exec=rm" }, { id: 7 }, {}];
+    expect(freshYoutubeIds(page, seen)).toEqual(["bbbbbbbbbbb", "ccccccccccc"]);
+    // pure: the caller marks an id only when it spends a request on it
+    expect([...seen]).toEqual(["yt:aaaaaaaaaaa"]);
+    seen.add("yt:bbbbbbbbbbb");
+    expect(freshYoutubeIds(page, seen)).toEqual(["ccccccccccc"]);
   });
 });
 

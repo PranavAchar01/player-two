@@ -167,14 +167,25 @@ export function judgeFootage(track: Track, plan: { arm: Arm; signature: MotionSi
   };
   const sigL = signatureOf(stats.left), sigR = signatureOf(stats.right);
 
-  // "either" means one good arm is enough, so judge the arm that moves more and is actually seen
-  const armUsed: "left" | "right" | "both" = plan.arm === "both" ? "both" : plan.arm === "left" || plan.arm === "right" ? plan.arm : stats.left.excursion * stats.left.visibility >= stats.right.excursion * stats.right.visibility ? "left" : "right";
+  const direction = plan.signature.kind === "arm_elevation" ? plan.signature.direction ?? "any" : "any";
+  const directionOk = (lateral: number | null) => direction === "any" || lateral === null || (direction === "sideways" ? lateral >= BARS.sidewaysFrac : lateral <= BARS.forwardFrac);
+
+  // "either" means one good arm is enough, which is all a single-arm robot can use. The arm is chosen by how many of
+  // the per-arm bars it clears, not by which one moves more: in a two-armed video the busier arm is often the one
+  // that swings out of shot or sits in shadow, and picking it would reject footage whose other arm is clean.
+  // Only a tie falls back to "moves more and is actually seen".
+  const cleared = (s: (typeof stats)["left"], g: typeof sigL) => [s.visibility >= BARS.armVisibility, s.excursion >= BARS.armExcursionM, s.inFrame >= BARS.limbsInFramePct, g.count >= plan.signature.minCount, directionOk(g.lateral)].filter(Boolean).length;
+  const better = (): "left" | "right" => {
+    const l = cleared(stats.left, sigL), r = cleared(stats.right, sigR);
+    if (l !== r) return l > r ? "left" : "right";
+    return stats.left.excursion * stats.left.visibility >= stats.right.excursion * stats.right.visibility ? "left" : "right";
+  };
+  const armUsed: "left" | "right" | "both" = plan.arm === "both" ? "both" : plan.arm === "left" || plan.arm === "right" ? plan.arm : better();
   const pick = <T,>(l: T, r: T, worst: (a: T, b: T) => T): T => (armUsed === "both" ? worst(l, r) : armUsed === "left" ? l : r);
   const armVisibility = pick(stats.left.visibility, stats.right.visibility, Math.min);
   const armExcursionM = pick(stats.left.excursion, stats.right.excursion, Math.min);
   const limbsInFramePct = pick(stats.left.inFrame, stats.right.inFrame, Math.min);
   const signature = pick(sigL, sigR, (a, b) => (a.count <= b.count ? a : b));
-  const direction = plan.signature.kind === "arm_elevation" ? plan.signature.direction ?? "any" : "any";
   // with two arms the one further from the wanted direction decides
   const lateralFrac = sigL.lateral === null || sigR.lateral === null ? null : pick(sigL.lateral, sigR.lateral, direction === "forward" ? Math.max : Math.min);
 
@@ -229,8 +240,7 @@ export function judgeFootage(track: Track, plan: { arm: Arm; signature: MotionSi
   ];
 
   if (direction !== "any" && lateralFrac !== null) {
-    const pass = direction === "sideways" ? lateralFrac >= BARS.sidewaysFrac : lateralFrac <= BARS.forwardFrac;
-    checks.push({ name: "motion direction", pass, detail: `raised arm points ${round(lateralFrac * 100)}% sideways, ${direction === "sideways" ? `need ${BARS.sidewaysFrac * 100}% or more for a raise out to the side (less looks like a front raise)` : `need ${BARS.forwardFrac * 100}% or less for a raise toward the camera`}` });
+    checks.push({ name: "motion direction", pass: directionOk(lateralFrac), detail: `raised arm points ${round(lateralFrac * 100)}% sideways, ${direction === "sideways" ? `need ${BARS.sidewaysFrac * 100}% or more for a raise out to the side (less looks like a front raise)` : `need ${BARS.forwardFrac * 100}% or less for a raise toward the camera`}` });
   }
 
   const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
