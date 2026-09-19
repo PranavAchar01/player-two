@@ -43,6 +43,16 @@ export function mirrorG1(rig: Rig, track: Track, window: MirrorWindow) {
   const sub = (a: Landmark, b: Landmark): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
   const rotZ = (v: Vec3, a: number): Vec3 => ({ x: v.x * Math.cos(a) - v.y * Math.sin(a), y: v.x * Math.sin(a) + v.y * Math.cos(a), z: v.z });
 
+  // A seated person's thighs point at the camera. Retargeted literally that lifts the robot's legs into a lunge,
+  // so when the person sits for most of the clip the robot simply stands still and only its upper body moves.
+  let seatedTicks = 0;
+  for (let t = 0; t < ticks; t += 5) {
+    const fpos = Math.min(n - 1, (startSeconds + t / TICK_HZ) * track.fps);
+    const drop = (hip: string, knee: string) => (lm(knee, fpos).y - lm(hip, fpos).y) / (fullLength[hip + knee] || 0.4);
+    if (drop("24", "26") < 0.78 && drop("23", "25") < 0.78) seatedTicks += 5; // standing thighs measure about 0.9 to 1.0
+  }
+  const seated = seatedTicks > ticks * 0.6;
+
   function fly(leadTicks: number) {
     const sim = new Sim(rig, null);
     const op = new Operator(rig);
@@ -68,7 +78,7 @@ export function mirrorG1(rig: Rig, track: Track, window: MirrorWindow) {
       const legs: Record<Side, { q: number[]; ankleDrop: number }> = { left: { q: legPrev.left, ankleDrop: rig.standAnkleDrop }, right: { q: legPrev.right, ankleDrop: rig.standAnkleDrop } };
       for (const [side, ids] of [["left", ["24", "26", "28"]], ["right", ["23", "25", "27"]]] as [Side, string[]][]) {
         const [h, k, a] = ids.map((key) => lm(key, fpos));
-        if (Math.min(h.visibility, k.visibility, a.visibility) < 0.5) continue; // legs out of shot: hold
+        if (seated || Math.min(h.visibility, k.visibility, a.visibility) < 0.5) continue; // seated or out of shot: hold
         // Pose models guess that a standing person's knees sit slightly toward the camera, which would crouch the
         // robot, so leg depth comes from foreshortening instead (see `limb`).
         // Single-camera depth also cannot tell which leg is in front when the dancer turns away, which would cross
@@ -104,7 +114,7 @@ export function mirrorG1(rig: Rig, track: Track, window: MirrorWindow) {
   return {
     aspect, startSeconds, ticks, metresPerUnit,
     ctrl: final.ctrl, body: final.body, skeleton: final.skeleton,
-    stats: { tracked: 100 - pct(final.held), limited: pct(final.limited), lagMsBefore: lag * 20, lagMsAfter: residual * 20 },
+    stats: { tracked: 100 - pct(final.held), limited: pct(final.limited), lagMsBefore: lag * 20, lagMsAfter: residual * 20, seated },
   };
 }
 

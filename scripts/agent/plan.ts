@@ -72,7 +72,12 @@ export function validatePlan(raw: unknown, task: string, model: string, seconds:
     // every clip, so the count is capped by what a slow, clean performance can show in that time.
     const most = kind === "arm_elevation" ? Math.max(1, Math.floor(seconds / 3)) : Math.max(2, Math.floor(seconds));
     signature = { kind, threshold: Math.max(lo, Math.min(hi, Math.round(sigRaw.threshold))), minCount: Math.max(1, Math.min(most, count)) };
-    if (kind === "arm_elevation") signature.direction = (DIRECTIONS as readonly string[]).includes(sigRaw.direction as string) ? (sigRaw.direction as Direction) : "any";
+    if (kind === "arm_elevation") {
+      signature.direction = (DIRECTIONS as readonly string[]).includes(sigRaw.direction as string) ? (sigRaw.direction as Direction) : "any";
+      // The planner once called a shoulder press "forward" and the judge then rejected eight good clips for pointing
+      // sideways. A forward claim must be backed by the task's own words, otherwise direction is left unchecked.
+      if (signature.direction === "forward" && !/\b(front|forward|toward|towards|reach|punch|push)/i.test(task)) signature.direction = "any";
+    }
   }
 
   const criteria = (Array.isArray(r.rejectionCriteria) ? r.rejectionCriteria : []).map((c) => cleanText(c, 160)).filter((c) => c.length >= 3).slice(0, 8);
@@ -104,7 +109,7 @@ Return JSON only.
 - queries: 4 to 6 short stock-video or YouTube search queries (plain words, no quotes, no operators) tuned to find such footage of the task. Vary the wording. Prefer words like "front view", "demonstration", "full body", "one person".
 - arm: which of the PERSON'S arms matters: left, right, both, or either.
 - motionDescription: one sentence saying what the motion must look like in measurable terms.
-- signature: pick ONE machine check. kind "arm_elevation" = upper arm lifts away from the torso past threshold DEGREES (0 is hanging down, 90 is horizontal); kind "elbow_flexion" = elbow angle swings through threshold DEGREES, minCount counts swings (one bend and straighten is 2); kind "wrist_oscillation" = wrist goes back and forth with threshold CENTIMETRES per swing, minCount counts swings. Be lenient: set the threshold about 25 percent below the ideal motion. direction (used for arm_elevation only): "sideways" when the arm goes out to the side in the camera plane (lateral raise, jumping jack), "forward" when it goes toward the camera (front raise, reaching forward), otherwise "any".
+- signature: pick ONE machine check. kind "arm_elevation" = upper arm lifts away from the torso past threshold DEGREES (0 is hanging down, 90 is horizontal); kind "elbow_flexion" = elbow angle swings through threshold DEGREES, minCount counts swings (one bend and straighten is 2); kind "wrist_oscillation" = wrist goes back and forth with threshold CENTIMETRES per swing, minCount counts swings. Be lenient: set the threshold about 25 percent below the ideal motion. direction (used for arm_elevation only): "sideways" when the arm goes out to the side in the camera plane (lateral raise, jumping jack), "forward" ONLY when the task itself says front, forward, toward or reaching (front raise, reaching forward, punch); an overhead or shoulder press, a wave, and anything else moves in the camera plane or is unclear, so use "any". When unsure use "any": a wrong direction rejects good footage. Keep minCount at 1 unless the task is rhythmic (jumping jacks, waving), because clips are only a few seconds long.
 - rejectionCriteria: up to 8 short reasons footage of this task would be unusable.`;
 
 export async function planTask(task: string, seconds: number, log: (line: string) => void): Promise<Plan> {

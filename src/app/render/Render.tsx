@@ -120,7 +120,7 @@ export default function Render() {
       }
       viewer.setSim(player.reset());
       let at = 0;
-      setHud({ robot: label, task: caption, source: footage ? "motion source: stock video, pose estimated per frame" : demo.source ? "motion source: online video, pose only" : "motion source: scripted pilot", split, struck: false, footage });
+      setHud({ robot: label, task: caption, source: footage ? "motion source: online video, pose estimated per frame" : demo.source ? "motion source: online video, pose only" : "motion source: scripted pilot", split, struck: false, footage });
       const total = PRE + demo.ctrl.length + POST;
       const usedArm = isArmRobot(demo.robot) && demo.stats?.armUsed ? ARM_BONES[demo.stats.armUsed] : null;
       window.p2 = {
