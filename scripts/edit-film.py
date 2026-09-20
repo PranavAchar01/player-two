@@ -8,6 +8,7 @@ pitch shifted. Levels leave room for a voice-over.
 """
 
 import json
+import os
 import subprocess
 import sys
 import wave
@@ -61,7 +62,7 @@ for n, which in enumerate(order):
 
 # Hold the cut to TARGET seconds: a longer sentence takes longer to type, so the typing and run-timeline segments
 # (the ones already sped up past 1.5x) absorb the difference. The robot footage keeps its near-real-time speed.
-TARGET = 49.0
+TARGET = float(os.environ.get("TARGET", "49"))
 fixed = sum((b - a) / sp for a, b, sp in segments if sp < 1.5)
 flexible = sum((b - a) / sp for a, b, sp in segments if sp >= 1.5)
 if fixed + flexible > TARGET:
@@ -180,6 +181,11 @@ with wave.open(str(film / "sfx.wav"), "wb") as w:
     w.writeframes((np.clip(stereo, -1, 1) * 32767).astype(np.int16).tobytes())
 
 # ---- picture
+# A recording that is already 1920 wide is left alone; an older 1280 one is scaled up and sharpened a little.
+raw_w = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0", str(film / "raw.webm")], capture_output=True, text=True).stdout.strip() or 0)
+SCALE = "" if raw_w >= 1920 else "scale=1920:1080:flags=lanczos,unsharp=5:5:0.5:5:5:0.0,"
+# NO_FADE_OUT=1 when another clip follows this one (scripts/join-film.py fades between them)
+FADE_OUT = "" if os.environ.get("NO_FADE_OUT") else f",fade=t=out:st={total - 0.6:.3f}:d=0.6"
 parts, labels = [], []
 for i, (a, b, sp) in enumerate(segments):
     parts.append(
@@ -188,7 +194,7 @@ for i, (a, b, sp) in enumerate(segments):
     labels.append(f"[s{i}]")
 graph = (
     ";".join(parts)
-    + f";{''.join(labels)}concat=n={len(segments)}:v=1:a=0,scale=1920:1080:flags=lanczos,unsharp=5:5:0.5:5:5:0.0,fade=t=in:st=0:d=0.5,fade=t=out:st={total - 0.6:.3f}:d=0.6[v]"
+    + f";{''.join(labels)}concat=n={len(segments)}:v=1:a=0,{SCALE}fade=t=in:st=0:d=0.5{FADE_OUT}[v]"
 )
 subprocess.run(
     [

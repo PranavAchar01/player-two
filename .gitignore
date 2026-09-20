@@ -52,3 +52,6 @@ media/
 public/demos/
 data/sources/
 data/runs/
+
+# the one folder the Docker sandbox can see
+data/sandbox/

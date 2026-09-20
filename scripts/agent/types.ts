@@ -136,7 +136,27 @@ export interface Candidate {
   footageDeleted: boolean;
   /** Set when an earlier run already left this video's footage or pose track on disk, so nothing was downloaded again. */
   reused?: "footage" | "track";
+  /** How the video was found when it did not come from the agent's own search: "brightdata" for web discovery. */
+  via?: "brightdata";
   verdict: Verdict | null;
+}
+
+/**
+ * What the brain (brain/agent.py, the Strands harness) hands the pipeline before a run. Everything in it is a hint
+ * or a lead, never a verdict: discovered videos still go through the licence gate and the judge, and a skip only
+ * saves a download that memory says already failed for this same task and robot.
+ */
+export interface BrainBrief {
+  /** Name of a Docker sandbox (`docker sandbox ls`). Downloaded video is decoded inside it, only pose numbers come out. */
+  sandbox: string | null;
+  /** YouTube ids found on the open web (Bright Data SERP). */
+  discovered: { id: string; query: string }[];
+  /** candidate key -> why memory says not to spend a download on it again. */
+  skip: Record<string, string>;
+  /** Shown on the run page. */
+  memory: { provider: string; recalled: number; lessons: string[] } | null;
+  discovery: { provider: string; queries: number; hits: number; note: string | null } | null;
+  harness: { framework: string; model: string } | null;
 }
 
 export interface Episode {
@@ -153,6 +173,9 @@ export interface Episode {
   stats: Record<string, number>;
   provenance: { source: string; id: string; pageUrl: string; licence: Licence; author: string | null; authorUrl: string | null; title: string | null; query: string; fetchedAt: string };
 }
+
+/** Set on Run when the run was started by the brain. */
+export type RunBrain = BrainBrief & { skipped: number; discoveredKept: number; sandboxed: number };
 
 export type StepName = "plan" | "search" | "fetch" | "judge" | "retarget" | "write";
 export type StepStatus = "pending" | "running" | "done" | "failed";
@@ -184,6 +207,8 @@ export interface RunOptions {
 }
 
 export interface Run {
+  /** Present when the Strands brain started this run. */
+  brain?: RunBrain;
   schema: 1;
   id: string;
   task: string;

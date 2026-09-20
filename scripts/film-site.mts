@@ -12,7 +12,8 @@ await mkdir(out, { recursive: true });
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,
-  args: ["--autoplay-policy=no-user-gesture-required", "--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist", "--hide-scrollbars"],
+  // the browser-level scale factor is what makes the screencast record device pixels (1920x1080), not CSS pixels
+  args: ["--force-device-scale-factor=1.5", "--autoplay-policy=no-user-gesture-required", "--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist", "--hide-scrollbars"],
   // a laptop-sized page rendered at 1.5x: the recording is 1920x1080 and the interface reads large
   defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 1.5 },
 });

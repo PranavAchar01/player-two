@@ -79,6 +79,42 @@ const blank = (c: Pick<Candidate, "source" | "id" | "pageUrl" | "licence" | "que
 
 // ---------------------------------------------------------------- YouTube, Creative Commons only
 
+/** One paced metadata request, then the licence gate. Every YouTube video passes through here, however it was found. */
+async function vetYoutubeId(id: string, query: string, allowStandardLicense: boolean, pacer: Pacer, log: (l: string) => void): Promise<Candidate | null> {
+  await pacer.wait();
+  let meta: YoutubeMeta;
+  try {
+    const { stdout } = await run("yt-dlp", ["--quiet", "--no-warnings", "--no-playlist", "-J", `https://www.youtube.com/watch?v=${id}`], { timeout: 90_000, maxBuffer: 64 << 20 });
+    meta = JSON.parse(stdout) as YoutubeMeta;
+  } catch {
+    return null;
+  }
+  const gate = keepYoutubeEntry({ ...meta, id }, allowStandardLicense);
+  const licence = youtubeLicence(meta.license);
+  const c = blank({ source: licence.redistributable ? "youtube-cc" : "youtube", id, pageUrl: `https://www.youtube.com/watch?v=${id}`, licence, query, title: str(meta.title), author: str(meta.uploader), authorUrl: typeof meta.channel_url === "string" && meta.channel_url.startsWith("https://www.youtube.com/") ? meta.channel_url : null, durationS: typeof meta.duration === "number" ? meta.duration : null });
+  if (!gate.keep) { c.stage = "skipped"; c.note = gate.reason; }
+  log(`search: youtube ${id} ${gate.keep ? "kept" : "skipped"} (${licence.name})`);
+  return c;
+}
+
+/**
+ * Videos the brain found on the open web. A search result is a lead, not a licence: each id gets the same metadata
+ * request and the same Creative Commons gate as the agent's own hits. Ids are shaped like YouTube ids or dropped.
+ */
+export async function vetDiscovered(hits: { id: string; query: string }[], want: number, allowStandardLicense: boolean, pacer: Pacer, seen: Set<string>, log: (l: string) => void): Promise<Candidate[]> {
+  const out: Candidate[] = [];
+  for (const hit of hits) {
+    if (out.filter((c) => c.stage === "found").length >= want) break;
+    if (!/^[\w-]{11}$/.test(hit.id) || seen.has(`yt:${hit.id}`)) continue;
+    seen.add(`yt:${hit.id}`);
+    const c = await vetYoutubeId(hit.id, hit.query.slice(0, 120), allowStandardLicense, pacer, log);
+    if (!c) continue;
+    c.via = "brightdata";
+    out.push(c);
+  }
+  return out;
+}
+
 export async function searchYoutube(queries: string[], want: number, allowStandardLicense: boolean, pacer: Pacer, seen: Set<string>, log: (l: string) => void): Promise<{ candidates: Candidate[]; searches: SearchLog[] }> {
   const candidates: Candidate[] = [];
   const searches: SearchLog[] = [];
@@ -105,20 +141,10 @@ export async function searchYoutube(queries: string[], want: number, allowStanda
     for (const id of freshYoutubeIds(flat, seen)) {
       if (kept() >= want) break;
       seen.add(`yt:${id}`);
-      await pacer.wait();
-      let meta: YoutubeMeta;
-      try {
-        const { stdout } = await run("yt-dlp", ["--quiet", "--no-warnings", "--no-playlist", "-J", `https://www.youtube.com/watch?v=${id}`], { timeout: 90_000, maxBuffer: 64 << 20 });
-        meta = JSON.parse(stdout) as YoutubeMeta;
-      } catch {
-        continue;
-      }
-      const gate = keepYoutubeEntry({ ...meta, id }, allowStandardLicense);
-      const licence = youtubeLicence(meta.license);
-      const c = blank({ source: licence.redistributable ? "youtube-cc" : "youtube", id, pageUrl: `https://www.youtube.com/watch?v=${id}`, licence, query, title: str(meta.title), author: str(meta.uploader), authorUrl: typeof meta.channel_url === "string" && meta.channel_url.startsWith("https://www.youtube.com/") ? meta.channel_url : null, durationS: typeof meta.duration === "number" ? meta.duration : null });
-      if (!gate.keep) { c.stage = "skipped"; c.note = gate.reason; } else entry.kept++;
+      const c = await vetYoutubeId(id, query, allowStandardLicense, pacer, log);
+      if (!c) continue;
+      if (c.stage === "found") entry.kept++;
       candidates.push(c);
-      log(`search: youtube ${id} ${gate.keep ? "kept" : "skipped"} (${licence.name})`);
     }
   }
   return { candidates, searches };

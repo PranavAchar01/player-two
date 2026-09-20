@@ -67,6 +67,39 @@ def short(reason: str) -> str:
     return f"{name.strip()}: {detail.strip()}"[:140]
 
 
+def steps_for(run: dict, run_dir: Path) -> list[dict]:
+    """The run page's timeline. A run started by the brain (brain/agent.py) gets its memory and web steps around the
+    pipeline's own six, each tagged with the part of the stack that did the work. All text comes from the traces."""
+    own = {s["name"]: s for s in run["steps"]}
+    step = lambda key, by, extra="": {
+        "name": STEP_NAMES[key], "by": by, "detail": " ".join(x for x in [own[key].get("summary") or "", extra] if x).strip(), "ms": own[key].get("ms", 0)}
+    brain_file = run_dir / "brain.json"
+    if not brain_file.exists():
+        return [step(k, "") for k in STEP_NAMES if k in own]
+    brain = json.loads(brain_file.read_text())
+    b = run.get("brain") or {}
+    did = lambda name: [x for x in brain["steps"] if x["name"] == name]
+    recall, remember, discover = did("recall"), did("remember"), did("discover")
+    found = sum(x.get("fresh", 0) for x in discover)
+    web = f'Bright Data searched the open web {len(discover)} times and brought back {found} leads, {b.get("discoveredKept", 0)} of them passed the licence gate.' if discover else ""
+    if discover and not any(x["ok"] for x in discover):
+        web = f'Bright Data was not reachable: {discover[-1]["summary"]}.'
+    out = []
+    if recall:
+        lessons = " ".join(recall[0].get("lessons", [])[:2])
+        out.append({"name": "Recall", "by": "Cognee", "detail": f'{recall[0]["summary"]}. {lessons}'.strip(), "ms": recall[0]["ms"]})
+    harness = brain.get("harness", {})
+    out.append(step("plan", "Strands agent", f'The {harness.get("framework", "strands-agents")} brain ({harness.get("model", "")}) chose the web queries{" (scripted order, the model was unreachable)" if harness.get("scripted") else ""}.'))
+    search = step("search", "Bright Data", web)
+    search["ms"] += sum(x["ms"] for x in discover)
+    out.append(search)
+    out.append(step("fetch", "Docker sandbox" if b.get("sandbox") else "", f'{b.get("sandboxed", 0)} videos were decoded inside the Docker sandbox, only pose numbers came out. Memory saved {b.get("skipped", 0)} downloads that had already failed.' if b.get("sandbox") else ""))
+    out += [step("judge", "Rules, no LLM"), step("retarget", "MuJoCo"), step("write", "LeRobot")]
+    if remember:
+        out.append({"name": "Remember", "by": "Cognee", "detail": remember[0]["summary"] + ".", "ms": remember[0]["ms"]})
+    return out
+
+
 def main(site: Path) -> None:
     out_demos = []
     for d in DEMOS:
@@ -165,7 +198,8 @@ def main(site: Path) -> None:
                     "stats": stats,
                 }
             )
-        total_s = sum(s.get("ms", 0) for s in run["steps"]) / 1000
+        steps = steps_for(run, ROOT / "data/runs" / d["run"])
+        total_s = sum(x.get("ms", 0) for x in steps) / 1000
         out_demos.append(
             {
                 "id": d["id"],
@@ -184,15 +218,7 @@ def main(site: Path) -> None:
                     "episodes": len(run["episodes"]),
                     "seconds": round(total_s),
                 },
-                "steps": [
-                    {
-                        "name": STEP_NAMES.get(s["name"], s["name"]),
-                        "detail": s.get("summary", ""),
-                        "ms": s.get("ms", 0),
-                    }
-                    for s in run["steps"]
-                    if s["name"] in STEP_NAMES
-                ],
+                "steps": steps,
                 "rejections": [
                     {
                         "title": (c.get("title") or "").strip()[:60],

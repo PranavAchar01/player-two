@@ -48,10 +48,11 @@ export function validateRunRequest(body: unknown, maxVideosCap: number = MAX_VID
 }
 
 /** Parses the CLI argv into the same object the API accepts, so both paths share every rule above. */
-export function parseArgv(argv: string[]): { request: unknown; runId: string | null } | { error: string } {
+export function parseArgv(argv: string[]): { request: unknown; runId: string | null; brainFile: string | null } | { error: string } {
   const positional: string[] = [];
   const body: Record<string, unknown> = {};
   let runId: string | null = null;
+  let brainFile: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -62,10 +63,11 @@ export function parseArgv(argv: string[]): { request: unknown; runId: string | n
     else if (a === "--sources") body.sources = (next() ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     else if (a === "--allow-standard-license") body.allowStandardLicense = true;
     else if (a === "--run-id") runId = next() ?? null;
+    else if (a === "--brain") brainFile = next() ?? null;
     else if (a.startsWith("--")) return { error: `unknown flag ${a}` };
     else positional.push(a);
   }
   if (positional.length !== 1) return { error: 'usage: agent.mts "<task>" [--robot g1|so101|panda] [--max-videos N] [--target-accepted N] [--seconds S] [--sources pexels,youtube-cc] [--allow-standard-license]' };
   body.task = positional[0];
-  return { request: body, runId };
+  return { request: body, runId, brainFile };
 }

@@ -64,14 +64,18 @@ describe("validateRunRequest", () => {
 describe("parseArgv", () => {
   it("maps CLI flags onto the same request the API takes", () => {
     const a = parseArgv(["dumbbell lateral raise", "--robot", "g1", "--max-videos", "6", "--seconds", "6", "--sources", "pexels,youtube-cc"]);
-    expect(a).toEqual({ request: { task: "dumbbell lateral raise", robot: "g1", maxVideos: 6, seconds: 6, sources: ["pexels", "youtube-cc"] }, runId: null });
+    expect(a).toEqual({ request: { task: "dumbbell lateral raise", robot: "g1", maxVideos: 6, seconds: 6, sources: ["pexels", "youtube-cc"] }, runId: null, brainFile: null });
     expect("request" in a && validateRunRequest(a.request).ok).toBe(true);
   });
   it("reads --target-accepted", () => {
     const a = parseArgv(["wave hello", "--max-videos", "80", "--target-accepted", "20"]);
-    expect(a).toEqual({ request: { task: "wave hello", maxVideos: 80, targetAccepted: 20 }, runId: null });
+    expect(a).toEqual({ request: { task: "wave hello", maxVideos: 80, targetAccepted: 20 }, runId: null, brainFile: null });
     expect("request" in a && validateRunRequest(a.request, CLI_MAX_VIDEOS_CAP).ok).toBe(true);
     expect("request" in a && validateRunRequest(a.request).ok).toBe(false); // the web door would not take 80
+  });
+  it("reads --brain as a file path and keeps it out of the request the API validates", () => {
+    const a = parseArgv(["wave hello", "--brain", "data/runs/x/brief.json"]);
+    expect(a).toEqual({ request: { task: "wave hello" }, runId: null, brainFile: "data/runs/x/brief.json" });
   });
   it("keeps the standard-licence switch off unless asked, and refuses unknown flags", () => {
     const off = parseArgv(["wave hello"]);

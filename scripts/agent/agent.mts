@@ -18,8 +18,8 @@ import { judgeBestWindow, parseTrack } from "./judge";
 import { planTask } from "./plan";
 import { renderReport } from "./report";
 import { retargetClip } from "./retarget";
-import { Pacer, searchPexels, searchYoutube } from "./search";
-import { CLI_MAX_VIDEOS_CAP, MIN_TRACKED_PCT, RUN_ID, type Candidate, type Episode, type Run, type StepName } from "./types";
+import { Pacer, searchPexels, searchYoutube, vetDiscovered } from "./search";
+import { CLI_MAX_VIDEOS_CAP, MIN_TRACKED_PCT, RUN_ID, type BrainBrief, type Candidate, type Episode, type Run, type StepName } from "./types";
 import { parseArgv, validateRunRequest } from "./validate";
 
 const run$ = promisify(execFile);
@@ -32,6 +32,8 @@ const checked = validateRunRequest(argv.request, CLI_MAX_VIDEOS_CAP);
 if (!checked.ok) { console.error(checked.error); process.exit(2); }
 if (argv.runId !== null && !RUN_ID.test(argv.runId)) { console.error("bad --run-id"); process.exit(2); }
 const { task, ...options } = checked.value;
+// --brain <file>: the brief written by the Strands harness (brain/agent.py). Leads and hints only, see BrainBrief.
+const brief: BrainBrief | null = argv.brainFile ? (JSON.parse(await readFile(argv.brainFile, "utf8")) as BrainBrief) : null;
 
 // Before a run directory exists and before anything is searched: a task the robot cannot do is not a failed run,
 // it is a request to rephrase, so it leaves nothing behind and exits like any other bad argument.
@@ -117,6 +119,13 @@ try {
     return got;
   }
 
+  // Leads from the open web go first: they cost one metadata request each and pass the same licence gate.
+  if (brief?.discovered.length) {
+    const found = await vetDiscovered(brief.discovered, searchWant(counts, limits), options.allowStandardLicense, pacer, seen, log);
+    run.candidates.push(...found);
+    log(`search: ${found.filter((c) => c.stage === "found").length} of ${brief.discovered.length} web discoveries passed the licence gate`);
+    await save();
+  }
   const firstWant = searchWant(counts, limits);
   for (const source of options.sources) {
     if (source === "youtube-cc") { await searchYoutubeMore(firstWant); continue; }
@@ -125,6 +134,10 @@ try {
     run.candidates.push(...found.candidates);
     await save();
   }
+  // Memory is allowed one thing here: not spending a download on a video it saw fail for this same task and robot.
+  let skippedByMemory = 0;
+  if (brief) for (const c of run.candidates) if (c.stage === "found" && brief.skip[c.key]) { c.stage = "skipped"; c.note = `memory: ${brief.skip[c.key].slice(0, 160)}`; skippedByMemory++; }
+  if (skippedByMemory) log(`search: memory skipped ${skippedByMemory} videos that already failed for this task`);
   // Take turns between sources so one prolific source cannot use the whole budget.
   const pools = options.sources.map((s) => usable(run.candidates).filter(fromSource(s)));
   const queue: Candidate[] = [];
@@ -134,7 +147,7 @@ try {
   // ---- c + d. fetch, extract pose, judge. Judged one by one so the page fills in as the run goes.
   t0 = performance.now();
   await begin("fetch");
-  let judgeMs = 0, reusedCount = 0, topUps = 0;
+  let judgeMs = 0, reusedCount = 0, topUps = 0, sandboxed = 0;
   const emitted = new Set<string>();
   let stopped: string | null = null;
   for (let i = 0; ; i++) {
@@ -169,7 +182,8 @@ try {
       }
       if (c.file) c.durationS ??= await probeDuration(c.file);
       c.stage = "extracting"; await save();
-      c.track = onDisk.track ?? (await extractPose(c.file!, c.key));
+      if (!onDisk.track && brief?.sandbox) sandboxed++;
+      c.track = onDisk.track ?? (await extractPose(c.file!, c.key, brief?.sandbox ?? null));
       if (!c.licence.redistributable) {
         // --allow-standard-license: the numbers are kept, the footage is not.
         await rm(`data/sources/${c.key}.mp4`, { force: true });
@@ -193,6 +207,7 @@ try {
     await save();
   }
   for (const c of run.candidates) if (c.stage === "found") { c.stage = "skipped"; c.note = `not needed: ${stopped}`; }
+  if (brief) run.brain = { ...brief, skipped: skippedByMemory, sandboxed, discoveredKept: run.candidates.filter((c) => c.via === "brightdata" && c.stage !== "skipped").length };
   const judged = run.candidates.filter((c) => c.verdict);
   const accepted = judged.filter((c) => c.verdict!.accepted).sort((a, b) => b.verdict!.score - a.verdict!.score);
   const failedCount = run.candidates.filter((c) => c.stage === "failed").length;

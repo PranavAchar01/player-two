@@ -2,7 +2,8 @@
 // never a shell string, because ids and paths here come from the internet.
 import { execFile } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
+import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
@@ -14,6 +15,8 @@ const MAX_BYTES = 200 << 20;
 /** Only the first minute is ever used. Longer footage costs pose-extraction time and buys nothing. */
 const MAX_CLIP_SECONDS = 60;
 export const MEDIAPIPE_PIN = "0.10.14";
+/** The one folder the Docker sandbox can see. Created with: docker sandbox create --name <name> shell <this folder> <scripts>:ro */
+export const SANDBOX_DIR = "data/sandbox";
 
 const exists = (p: string) => stat(p).then((s) => s.size > 0, () => false);
 
@@ -86,11 +89,31 @@ export async function fetchVideo(c: Candidate, pacer: Pacer): Promise<string> {
  * The pinned extractor command from scripts/tracks.mts. mediapipe newer than this pin aborts on this Mac, so the
  * pin is part of the run's recorded versions. extract_pose.py is not ours to edit: it is called exactly as documented.
  */
-export async function extractPose(video: string, key: string): Promise<string> {
+export async function extractPose(video: string, key: string, sandbox: string | null = null): Promise<string> {
   await mkdir("data/tracks", { recursive: true });
   const out = `data/tracks/${key}.json`;
   if (await exists(out)) return out;
-  await run("uv", ["run", "--quiet", "--python", "3.11", "--with", `mediapipe==${MEDIAPIPE_PIN}`, "--with", "numpy<2", "--with", "opencv-python-headless", "python", "scripts/extract_pose.py", video, "public/mediapipe/pose_landmarker_lite.task", out], { timeout: 1_200_000, maxBuffer: 8 << 20 });
+  const uv = ["run", "--quiet", "--python", "3.11", "--with", `mediapipe==${MEDIAPIPE_PIN}`, "--with", "numpy<2", "--with", "opencv-python-headless", "python"];
+  if (sandbox) {
+    // A video from the internet is untrusted input, and decoding it is where that matters. The file is handed to a
+    // Docker sandbox through its one shared folder, decoded and tracked in there, and only the numbers come back.
+    const work = path.resolve(SANDBOX_DIR), script = path.resolve("scripts/extract_pose.py");
+    await mkdir(`${SANDBOX_DIR}/in`, { recursive: true });
+    await mkdir(`${SANDBOX_DIR}/out`, { recursive: true });
+    await mkdir(`${SANDBOX_DIR}/model`, { recursive: true });
+    if (!(await exists(`${SANDBOX_DIR}/model/pose_landmarker_lite.task`))) await copyFile("public/mediapipe/pose_landmarker_lite.task", `${SANDBOX_DIR}/model/pose_landmarker_lite.task`);
+    await copyFile(video, `${SANDBOX_DIR}/in/${key}.mp4`);
+    try {
+      await run("docker", ["sandbox", "exec", "-w", work, sandbox, "uv", ...uv, script, `in/${key}.mp4`, "model/pose_landmarker_lite.task", `out/${key}.json`], { timeout: 1_200_000, maxBuffer: 8 << 20 });
+      if (!(await exists(`${SANDBOX_DIR}/out/${key}.json`))) throw new Error("the sandbox wrote no pose track");
+      await copyFile(`${SANDBOX_DIR}/out/${key}.json`, out);
+    } finally {
+      await rm(`${SANDBOX_DIR}/in/${key}.mp4`, { force: true });
+      await rm(`${SANDBOX_DIR}/out/${key}.json`, { force: true });
+    }
+    return out;
+  }
+  await run("uv", [...uv, "scripts/extract_pose.py", video, "public/mediapipe/pose_landmarker_lite.task", out], { timeout: 1_200_000, maxBuffer: 8 << 20 });
   if (!(await exists(out))) throw new Error("pose extraction wrote no track");
   return out;
 }
