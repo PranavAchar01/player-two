@@ -25,7 +25,8 @@ await page.evaluateOnNewDocument(() => {
 });
 page.on("pageerror", (e) => console.log("pageerror", String(e).slice(0, 160)));
 
-await page.goto(`${deck}?film=1`, { waitUntil: "networkidle0", timeout: 120_000 });
+// "load", not "networkidle0": a page with a <video> keeps a request open, and readiness is signalled by deckReady below
+await page.goto(`${deck}?film=1`, { waitUntil: "load", timeout: 120_000 });
 await page.waitForFunction("window.deckReady === true", { timeout: 60_000 });
 await page.evaluate(() => document.fonts.ready);
 const recorder = await page.screencast({ path: `${out}/raw.webm` });
