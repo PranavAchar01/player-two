@@ -6,6 +6,8 @@
 
 ### One sentence in. Robot demonstrations out.
 
+[![1st place, Track 1](https://img.shields.io/badge/🏆_1st_place-Track_1_·_The_Executable_World_Hackathon-ffd700?style=for-the-badge&labelColor=0b1428)](https://luma.com/exruwpkp)
+
 **An AI agent that finds licensed video of people doing a task and turns it into<br>physics-checked training demonstrations for real robot models.**
 
 <br>
@@ -24,7 +26,7 @@
 ![Tencent EdgeOne](https://img.shields.io/badge/Tencent-EdgeOne-0052d9?style=flat-square)
 ![AWS](https://img.shields.io/badge/AWS-S3_+_CloudFront-ff9900?style=flat-square)
 
-<sub>Built at the Executable World hackathon, San Francisco, 19 September 2026</sub>
+<sub>Built in one day at <a href="https://luma.com/exruwpkp">The Executable World: A Full Stack AI Hackathon</a>, San Francisco, 19 September 2026</sub>
 
 </div>
 
