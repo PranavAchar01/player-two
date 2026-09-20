@@ -17,7 +17,7 @@ def main(run_id: str, deck: Path) -> None:
         json.loads((d / "run.json").read_text()),
         json.loads((d / "brain.json").read_text()),
     )
-    clock = lambda iso: (iso or "")[11:19]  # noqa: E731
+    clock = lambda iso: (iso or "")[11:19]
     lines = [
         {
             "time": clock(brain["startedAt"]),
