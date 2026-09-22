@@ -55,7 +55,7 @@ def clean_cut(x: np.ndarray, thr: float, t: float, forward: bool) -> float:
     walks forward until 40 ms in a row are quiet (Whisper's word ends are often early, so the tail is kept)."""
     hop = SR // 100
     quiet = lambda i: 20 * np.log10(np.sqrt(np.mean(x[i : i + hop] ** 2)) + 1e-9) < thr
-    i = int(t * SR)
+    i = max(0, int(t * SR))
     for _ in range(80):
         if forward and all(quiet(i + k * hop) for k in range(4)):
             return (i + 2 * hop) / SR
@@ -68,6 +68,7 @@ def clean_cut(x: np.ndarray, thr: float, t: float, forward: bool) -> float:
 def take(x: np.ndarray, thr: float, a: float, b: float) -> tuple[np.ndarray, list[tuple[float, float]]]:
     """Cut [a, b], trim silence at both ends to 80/120 ms, and shorten pauses over 0.55 s to 0.35 s. Returns the audio
     and knots mapping original time to time in the take."""
+    a, b = max(0.0, a), min(b, len(x) / SR)
     hop = SR // 50
     db = frames_db(x[int(a * SR) : int(b * SR)], hop)
     loud = np.flatnonzero(db >= thr)
@@ -135,6 +136,12 @@ else:
     out_x, out_thr = level("lines", False)
     OUTRO = {"S1": (43.30, 45.82), "S2": (46.20, 49.70), "S3": (50.16, 53.92), "S4": (54.44, 57.92), "S5": (58.04, 60.62)}
 clips |= {k: take(out_x, out_thr, clean_cut(out_x, out_thr, a, False), clean_cut(out_x, out_thr, b_, True))[0] for k, (a, b_) in OUTRO.items()}
+# The goal + MediaPipe section (two lines) opens the stack when a recording for it exists (scripts/new-take.py).
+goal_cfg = json.loads((VO / "goal.json").read_text()) if (VO / "goal.json").exists() else None
+if goal_cfg:
+    g_x, g_thr = level(goal_cfg["file"], True)
+    clips |= {k: take(g_x, g_thr, clean_cut(g_x, g_thr, a, False), clean_cut(g_x, g_thr, b_, True))[0] for k, (a, b_) in goal_cfg["cuts"].items()}
+STACK = (["G1", "G2"] if goal_cfg else []) + ["S1", "S2", "S3", "S4", "S5"]
 ln = {k: len(v) / SR for k, v in clips.items()}
 
 # ---------------------------------------------------------------- the timeline
@@ -174,14 +181,8 @@ stack_at = demo_at + demo_len - FADE
 s1_lead = max(
     0.35, demo_at + prev_end + GAP - stack_at
 )  # the last demo line may run past the demo's last frame
-stack_lead = [s1_lead, 0.35, 0.35, 0.35, 0.35]
-stack_dwell = [
-    ln["S1"] + s1_lead + 0.6,
-    ln["S2"] + 0.95,
-    ln["S3"] + 0.95,
-    ln["S4"] + 0.95,
-    ln["S5"] + 2.4,
-]
+stack_lead = [s1_lead] + [0.35] * (len(STACK) - 1)
+stack_dwell = [ln[k] + stack_lead[i] + (2.05 if k == "S5" else 0.6) for i, k in enumerate(STACK)]
 
 
 # ---------------------------------------------------------------- film the two B-roll sets
@@ -284,7 +285,7 @@ def page_sound(film_dir: Path, dur: float, chord: bool) -> Path:
 
 
 intro_dir, intro_slides, intro_len = film("intro", intro_dwell)
-stack_dir, stack_slides, stack_len = film("stack", stack_dwell, "&endcap=1" if outro_cfg and outro_cfg.get("endcap") else "")
+stack_dir, stack_slides, stack_len = film("stack", stack_dwell, ("&endcap=1" if outro_cfg and outro_cfg.get("endcap") else "") + ("&goal=1" if goal_cfg else ""))
 intro_sfx, stack_sfx = (
     page_sound(intro_dir, intro_len, True),
     page_sound(stack_dir, stack_len, False),
@@ -313,7 +314,7 @@ def put(y: np.ndarray, at_s: float) -> None:
 put(intro, T0)
 for k, local in vo_demo.items():
     put(clips[k], demo_at + local)
-for i, k in enumerate(["S1", "S2", "S3", "S4", "S5"]):
+for i, k in enumerate(STACK):
     put(clips[k], stack_at + stack_slides[i] + stack_lead[i])
 vo_wav = VO / "voice-track.wav"
 with wave.open(str(vo_wav), "wb") as w:
@@ -439,7 +440,7 @@ report = {
                 round(stack_at + stack_slides[i] + stack_lead[i], 2),
                 round(stack_at + stack_slides[i] + stack_lead[i] + ln[k], 2),
             ]
-            for i, k in enumerate(["S1", "S2", "S3", "S4", "S5"])
+            for i, k in enumerate(STACK)
         },
     },
 }
