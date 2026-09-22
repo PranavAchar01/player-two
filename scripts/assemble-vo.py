@@ -123,12 +123,18 @@ def lines_between(x: np.ndarray, thr: float, bounds: list[float], keys: list[str
 # lines = "Public Storage" (the first take, still used for the outro until he re-records it).
 intro_x, intro_thr = level("intro4", True)
 demo_x, demo_thr = level("lines6", True)
-old_x, old_thr = level("lines", False)
 intro, iknots = take(intro_x, intro_thr, clean_cut(intro_x, intro_thr, 1.30, False), clean_cut(intro_x, intro_thr, 31.26, True))
 at = lambda t: remap(iknots, t)
 clips = lines_between(demo_x, demo_thr, [5.25, 13.98, 20.66, 26.14, 30.34, 37.08, 41.10], ["D1", "D2", "D3", "D4", "D5", "D6"])
-OUTRO = {"S1": (43.30, 45.82), "S2": (46.20, 49.70), "S3": (50.16, 53.92), "S4": (54.44, 57.92), "S5": (58.04, 60.62)}
-clips |= {k: take(old_x, old_thr, clean_cut(old_x, old_thr, a, False), clean_cut(old_x, old_thr, b_, True))[0] for k, (a, b_) in OUTRO.items()}
+# The outro: a fresh recording prepared by scripts/new-outro.py (media/vo/outro.json), else the first take's lines.
+outro_cfg = json.loads((VO / "outro.json").read_text()) if (VO / "outro.json").exists() else None
+if outro_cfg:
+    out_x, out_thr = level(outro_cfg["file"], True)
+    OUTRO = {k: tuple(v) for k, v in outro_cfg["cuts"].items()}
+else:
+    out_x, out_thr = level("lines", False)
+    OUTRO = {"S1": (43.30, 45.82), "S2": (46.20, 49.70), "S3": (50.16, 53.92), "S4": (54.44, 57.92), "S5": (58.04, 60.62)}
+clips |= {k: take(out_x, out_thr, clean_cut(out_x, out_thr, a, False), clean_cut(out_x, out_thr, b_, True))[0] for k, (a, b_) in OUTRO.items()}
 ln = {k: len(v) / SR for k, v in clips.items()}
 
 # ---------------------------------------------------------------- the timeline
@@ -179,10 +185,14 @@ stack_dwell = [
 
 
 # ---------------------------------------------------------------- film the two B-roll sets
-def film(set_name: str, dwell: list[float]) -> tuple[Path, list[float], float]:
+def film(set_name: str, dwell: list[float], extra: str = "") -> tuple[Path, list[float], float]:
     out = ROOT / f"media/film-vo-{set_name}"
-    url = f"{DECK}?set={set_name}&dwell={','.join(str(round(d * 1000)) for d in dwell)}"
-    subprocess.run(
+    url = f"{DECK}?set={set_name}&dwell={','.join(str(round(d * 1000)) for d in dwell)}{extra}"
+    # the same page with the same timing films the same frames, so a recording that matches is reused
+    if (out / "url.txt").exists() and (out / "url.txt").read_text() == url and (out / "raw.webm").exists():
+        print(f"reusing the {set_name} recording", flush=True)
+    else:
+        subprocess.run(
         [
             "zsh",
             "-ic",
@@ -190,7 +200,8 @@ def film(set_name: str, dwell: list[float]) -> tuple[Path, list[float], float]:
         ],
         check=True,
         capture_output=True,
-    )
+        )
+        (out / "url.txt").write_text(url)
     cues = json.loads((out / "cues.json").read_text())
     s0 = next(c["t"] for c in cues if c["type"] == "slide-0")
     slides = [c["t"] - s0 for c in cues if c["type"].startswith("slide-")]
@@ -273,7 +284,7 @@ def page_sound(film_dir: Path, dur: float, chord: bool) -> Path:
 
 
 intro_dir, intro_slides, intro_len = film("intro", intro_dwell)
-stack_dir, stack_slides, stack_len = film("stack", stack_dwell)
+stack_dir, stack_slides, stack_len = film("stack", stack_dwell, "&endcap=1" if outro_cfg and outro_cfg.get("endcap") else "")
 intro_sfx, stack_sfx = (
     page_sound(intro_dir, intro_len, True),
     page_sound(stack_dir, stack_len, False),
