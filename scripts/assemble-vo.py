@@ -8,6 +8,7 @@ The picture follows the voice, never the other way round: every B-roll shot star
 piece is as long as the line spoken over it, and pauses longer than 0.55 s inside a take are shortened to 0.35 s.
 """
 
+import hashlib
 import json
 import subprocess
 import wave
@@ -190,7 +191,9 @@ def film(set_name: str, dwell: list[float], extra: str = "") -> tuple[Path, list
     out = ROOT / f"media/film-vo-{set_name}"
     url = f"{DECK}?set={set_name}&dwell={','.join(str(round(d * 1000)) for d in dwell)}{extra}"
     # the same page with the same timing films the same frames, so a recording that matches is reused
-    if (out / "url.txt").exists() and (out / "url.txt").read_text() == url and (out / "raw.webm").exists():
+    page = ROOT.parent / "player-two-brain-deck/broll.html"
+    key = url + " " + hashlib.sha1(page.read_bytes()).hexdigest()  # a caption edit must re-film too
+    if (out / "url.txt").exists() and (out / "url.txt").read_text() == key and (out / "raw.webm").exists():
         print(f"reusing the {set_name} recording", flush=True)
     else:
         subprocess.run(
@@ -202,7 +205,7 @@ def film(set_name: str, dwell: list[float], extra: str = "") -> tuple[Path, list
         check=True,
         capture_output=True,
         )
-        (out / "url.txt").write_text(url)
+        (out / "url.txt").write_text(key)
     cues = json.loads((out / "cues.json").read_text())
     s0 = next(c["t"] for c in cues if c["type"] == "slide-0")
     slides = [c["t"] - s0 for c in cues if c["type"].startswith("slide-")]
