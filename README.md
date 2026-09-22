@@ -7,6 +7,7 @@
 ### One sentence in. Robot demonstrations out.
 
 [![1st place, Track 1](https://img.shields.io/badge/🏆_1st_place-Track_1_·_The_Executable_World_Hackathon-ffd700?style=for-the-badge&labelColor=0b1428)](https://luma.com/exruwpkp)
+[![2nd place](https://img.shields.io/badge/🥈_2nd_place-Battle_of_the_Personal_Brains-c0c0c0?style=for-the-badge&labelColor=0b1428)](https://luma.com/sep-21-cognee-aws)
 
 **An AI agent that finds licensed video of people doing a task and turns it into<br>physics-checked training demonstrations for real robot models.**
 
