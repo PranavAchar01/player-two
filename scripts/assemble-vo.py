@@ -82,7 +82,7 @@ def clean_cut(x: np.ndarray, t: float, forward: bool) -> float:
     """Move a cut into silence without entering a word: a start cut walks back to the nearest quiet 10 ms, an end cut
     walks forward until 40 ms in a row are quiet (Whisper's word ends are often early, so the tail is kept)."""
     hop = SR // 100
-    quiet = lambda i: 20 * np.log10(np.sqrt(np.mean(x[i:i + hop] ** 2)) + 1e-9) < -50  # noqa: E731
+    quiet = lambda i: 20 * np.log10(np.sqrt(np.mean(x[i:i + hop] ** 2)) + 1e-9) < -50
     i = int(t * SR)
     for _ in range(60):
         if forward and all(quiet(i + k * hop) for k in range(4)):
@@ -140,7 +140,7 @@ def remap(knots: list[tuple[float, float]], t: float) -> float:
 
 intro_x, lines_x = level("intro"), level("lines")
 intro, iknots = take(intro_x, clean_cut(intro_x, 0.40, False), clean_cut(intro_x, 41.95, True))
-at = lambda t: remap(iknots, t)  # noqa: E731
+at = lambda t: remap(iknots, t)
 
 # lines.m4a, picked and chosen: "Hi, I'm Pranav" and "Right now, people record..." are covered by the intro
 CUTS = {
