@@ -186,6 +186,8 @@ raw_w = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", 
 SCALE = "" if raw_w >= 1920 else "scale=1920:1080:flags=lanczos,unsharp=5:5:0.5:5:5:0.0,"
 # NO_FADE_OUT=1 when another clip follows this one (scripts/join-film.py fades between them)
 FADE_OUT = "" if os.environ.get("NO_FADE_OUT") else f",fade=t=out:st={total - 0.6:.3f}:d=0.6"
+# NO_FADE_IN=1 when another clip comes before this one
+FADE_IN = "" if os.environ.get("NO_FADE_IN") else "fade=t=in:st=0:d=0.5"
 parts, labels = [], []
 for i, (a, b, sp) in enumerate(segments):
     parts.append(
@@ -194,7 +196,7 @@ for i, (a, b, sp) in enumerate(segments):
     labels.append(f"[s{i}]")
 graph = (
     ";".join(parts)
-    + f";{''.join(labels)}concat=n={len(segments)}:v=1:a=0,{SCALE}fade=t=in:st=0:d=0.5{FADE_OUT}[v]"
+    + f";{''.join(labels)}concat=n={len(segments)}:v=1:a=0,{SCALE}{FADE_IN or 'null'}{FADE_OUT}[v]"
 )
 subprocess.run(
     [

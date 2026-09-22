@@ -22,6 +22,8 @@ let t0 = 0;
 await page.exposeFunction("__cue", (type: string) => cues.push({ type, t: (Date.now() - t0) / 1000 }));
 await page.evaluateOnNewDocument(() => {
   window.addEventListener("deck:slide", (e) => (window as unknown as { __cue: (t: string) => void }).__cue(`slide-${(e as CustomEvent<{ index: number }>).detail.index}`));
+  // smaller moments inside a slide (a headline card landing) get their own softer sound
+  window.addEventListener("deck:cue", (e) => (window as unknown as { __cue: (t: string) => void }).__cue((e as CustomEvent<{ type: string }>).detail.type));
 });
 page.on("pageerror", (e) => console.log("pageerror", String(e).slice(0, 160)));
 
