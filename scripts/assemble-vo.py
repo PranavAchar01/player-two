@@ -26,65 +26,37 @@ def sh(*args: str) -> str:
 
 
 # ---------------------------------------------------------------- voice
-def level(name: str) -> np.ndarray:
-    """High-pass, a gentle compressor, then two-pass loudness normalisation to -16 LUFS with a -1.5 dBTP ceiling."""
-    chain = "highpass=f=80,acompressor=threshold=-24dB:ratio=2.5:attack=8:release=150"
-    stats = subprocess.run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-nostats",
-            "-i",
-            str(VO / f"{name}.m4a"),
-            "-af",
-            f"{chain},loudnorm=I=-16:TP=-1.5:LRA=9:print_format=json",
-            "-f",
-            "null",
-            "-",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stderr
+def level(name: str, denoise: bool) -> tuple[np.ndarray, float]:
+    """(Light hiss reduction,) high-pass, a gentle compressor, then two-pass loudness normalisation to -16 LUFS with a
+    -1.5 dBTP ceiling. Returns the audio and the silence threshold for this recording (its noise floor + 12 dB)."""
+    chain = "aformat=channel_layouts=mono," + ("afftdn=nr=12:nf=-44:tn=1," if denoise else "") + "highpass=f=80,acompressor=threshold=-24dB:ratio=2.5:attack=8:release=150"
+    src = str(VO / f"{name}.m4a")
+    stats = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", src, "-af", f"{chain},loudnorm=I=-16:TP=-1.5:LRA=9:print_format=json", "-f", "null", "-"],
+                           capture_output=True, text=True, check=True).stderr
     m = json.loads(stats[stats.rindex("{") : stats.rindex("}") + 1])
-    norm = f"loudnorm=I=-16:TP=-1.5:LRA=9:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true"
+    # a straight gain to -16 LUFS, then a limiter for the few peaks it pushes past -1.5 dBFS (loudnorm's linear mode
+    # refuses the gain instead, which left the quieter takes 3 to 4 dB under the rest)
+    norm = f"volume={-16 - float(m['input_i']):.2f}dB,alimiter=limit=0.84:attack=5:release=50:level=false"
     out = VO / f"{name}-level.wav"
-    sh(
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "error",
-        "-i",
-        str(VO / f"{name}.m4a"),
-        "-af",
-        f"{chain},{norm},aresample={SR}",
-        "-ac",
-        "1",
-        "-c:a",
-        "pcm_s16le",
-        str(out),
-    )
+    sh("ffmpeg", "-y", "-loglevel", "error", "-i", src, "-af", f"{chain},{norm},aresample={SR}", "-ac", "1", "-c:a", "pcm_s16le", str(out))
     with wave.open(str(out)) as w:
-        return (
-            np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32)
-            / 32768
-        )
+        x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
+    floor = float(np.percentile(frames_db(x, SR // 100), 10))
+    return x, max(floor + 12, -52.0)
 
 
 def frames_db(x: np.ndarray, hop: int) -> np.ndarray:
     n = len(x) // hop
-    return 20 * np.log10(
-        np.sqrt(np.mean(x[: n * hop].reshape(n, hop) ** 2, axis=1)) + 1e-9
-    )
+    return 20 * np.log10(np.sqrt(np.mean(x[: n * hop].reshape(n, hop) ** 2, axis=1)) + 1e-9)
 
 
-def clean_cut(x: np.ndarray, t: float, forward: bool) -> float:
+def clean_cut(x: np.ndarray, thr: float, t: float, forward: bool) -> float:
     """Move a cut into silence without entering a word: a start cut walks back to the nearest quiet 10 ms, an end cut
     walks forward until 40 ms in a row are quiet (Whisper's word ends are often early, so the tail is kept)."""
     hop = SR // 100
-    quiet = lambda i: 20 * np.log10(np.sqrt(np.mean(x[i:i + hop] ** 2)) + 1e-9) < -50
+    quiet = lambda i: 20 * np.log10(np.sqrt(np.mean(x[i : i + hop] ** 2)) + 1e-9) < thr
     i = int(t * SR)
-    for _ in range(60):
+    for _ in range(80):
         if forward and all(quiet(i + k * hop) for k in range(4)):
             return (i + 2 * hop) / SR
         if not forward and quiet(i):
@@ -93,14 +65,16 @@ def clean_cut(x: np.ndarray, t: float, forward: bool) -> float:
     return t
 
 
-def take(
-    x: np.ndarray, a: float, b: float
-) -> tuple[np.ndarray, list[tuple[float, float]]]:
-    """Cut [a, b] and shorten long pauses. Returns the audio and knots mapping original time to time in the take."""
-    seg = x[int(a * SR) : int(b * SR)].copy()
+def take(x: np.ndarray, thr: float, a: float, b: float) -> tuple[np.ndarray, list[tuple[float, float]]]:
+    """Cut [a, b], trim silence at both ends to 80/120 ms, and shorten pauses over 0.55 s to 0.35 s. Returns the audio
+    and knots mapping original time to time in the take."""
     hop = SR // 50
-    db = frames_db(seg, hop)
-    silent = db < max(-50.0, float(np.percentile(db, 90)) - 32)
+    db = frames_db(x[int(a * SR) : int(b * SR)], hop)
+    loud = np.flatnonzero(db >= thr)
+    if len(loud):
+        a, b = max(a, a + loud[0] * hop / SR - 0.08), min(b, a + (loud[-1] + 1) * hop / SR + 0.12)
+    seg = x[int(a * SR) : int(b * SR)].copy()
+    silent = frames_db(seg, hop) < thr
     keep: list[tuple[int, int]] = []
     knots = [(a, 0.0)]
     i, pos, out_len = 0, 0, 0
@@ -124,11 +98,11 @@ def take(
     fade = int(0.015 * SR)
     parts = []
     for s0, s1 in keep:
-        p = seg[s0:s1].copy()
-        if len(p) > 2 * fade:
-            p[:fade] *= np.linspace(0, 1, fade)
-            p[-fade:] *= np.linspace(1, 0, fade)
-        parts.append(p)
+        piece = seg[s0:s1].copy()
+        if len(piece) > 2 * fade:
+            piece[:fade] *= np.linspace(0, 1, fade)
+            piece[-fade:] *= np.linspace(1, 0, fade)
+        parts.append(piece)
     audio = np.concatenate(parts)
     knots.append((b, len(audio) / SR))
     return audio, knots
@@ -138,38 +112,30 @@ def remap(knots: list[tuple[float, float]], t: float) -> float:
     return float(np.interp(t, [k[0] for k in knots], [k[1] for k in knots]))
 
 
-intro_x, lines_x = level("intro"), level("lines")
-intro, iknots = take(intro_x, clean_cut(intro_x, 0.40, False), clean_cut(intro_x, 41.95, True))
-at = lambda t: remap(iknots, t)
+def lines_between(x: np.ndarray, thr: float, bounds: list[float], keys: list[str]) -> dict[str, np.ndarray]:
+    """Consecutive lines from one take. Each boundary is where Whisper says the previous line's last word ends; the
+    real end is found by walking forward into silence, and the next line starts from that same point."""
+    cuts = [clean_cut(x, thr, bounds[0], False)] + [clean_cut(x, thr, t, True) for t in bounds[1:]]
+    return {k: take(x, thr, cuts[i], cuts[i + 1])[0] for i, k in enumerate(keys)}
 
-# lines.m4a, picked and chosen: "Hi, I'm Pranav" and "Right now, people record..." are covered by the intro
-CUTS = {
-    "D1": (3.60, 12.42),
-    "D2": (12.95, 18.62),
-    "D3": (19.18, 24.76),
-    "D4": (25.02, 29.02),
-    "D5": (29.50, 35.32),
-    "D6": (35.68, 39.34),
-    "S1": (43.30, 45.82),
-    "S2": (46.20, 49.70),
-    "S3": (50.16, 53.92),
-    "S4": (54.44, 57.92),
-    "S5": (58.04, 60.62),
-}
-clips = {
-    k: take(lines_x, clean_cut(lines_x, a, False), clean_cut(lines_x, b, True))[0]
-    for k, (a, b) in CUTS.items()
-}
+
+# Recordings: intro4 = "Public Storage 4" (his re-recorded intro), lines6 = "Public Storage 6" (the demo lines, re-recorded),
+# lines = "Public Storage" (the first take, still used for the outro until he re-records it).
+intro_x, intro_thr = level("intro4", True)
+demo_x, demo_thr = level("lines6", True)
+old_x, old_thr = level("lines", False)
+intro, iknots = take(intro_x, intro_thr, clean_cut(intro_x, intro_thr, 1.30, False), clean_cut(intro_x, intro_thr, 31.26, True))
+at = lambda t: remap(iknots, t)
+clips = lines_between(demo_x, demo_thr, [5.25, 13.98, 20.66, 26.14, 30.34, 37.08, 41.10], ["D1", "D2", "D3", "D4", "D5", "D6"])
+OUTRO = {"S1": (43.30, 45.82), "S2": (46.20, 49.70), "S3": (50.16, 53.92), "S4": (54.44, 57.92), "S5": (58.04, 60.62)}
+clips |= {k: take(old_x, old_thr, clean_cut(old_x, old_thr, a, False), clean_cut(old_x, old_thr, b_, True))[0] for k, (a, b_) in OUTRO.items()}
 ln = {k: len(v) / SR for k, v in clips.items()}
 
 # ---------------------------------------------------------------- the timeline
 T0 = 0.30  # the intro voice starts here
-b = [0.0] + [
-    T0 + at(w) - 0.25 for w in (3.22, 11.84, 17.96, 22.88, 33.64)
-]  # title, agent, gap, supply, internet, research
-demo_at = (
-    T0 + at(39.62) - 0.30
-)  # the landing page comes up on "Here is a quick demonstration"
+# shot changes on the first word of each sentence: agent, gap, supply, internet, research
+b = [0.0] + [T0 + at(w) - 0.25 for w in (3.82, 9.06, 13.80, 17.42, 25.32)]
+demo_at = T0 + at(29.30) - 0.30  # the landing page comes up on "Here's a quick demo"
 intro_dwell = [b[i + 1] - b[i] for i in range(5)] + [demo_at - b[5] + FADE]
 
 # demo pieces cut from app-50s.mp4: (app start, app end), sized to the line spoken over each
